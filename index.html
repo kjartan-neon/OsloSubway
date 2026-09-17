@@ -32,78 +32,46 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>SUPER SUBWAY '94 — 16-bit Subway Driver</title>
 <style>
-  /* BASE: border-box makes widths predictable; tap highlight off for game feel. */
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  /* html/body: full-screen dark stage. dvh = "dynamic viewport height" so the
-     page still fits when the phone URL bar shows/hides. */
   html,body{margin:0;padding:0;background:#0a0a12;height:100%;height:100dvh;overflow:hidden;
     font-family:'Courier New',monospace;user-select:none;-webkit-user-select:none;
     touch-action:manipulation;overscroll-behavior:none;-webkit-text-size-adjust:100%;}
-  /* #wrap: centers the arcade cabinet. env(safe-area-inset-*) avoids notches. */
-  #wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(circle at 50% 30%, #1a1a2e 0%, #050508 70%);
-    padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));overflow-y:auto;}
-  /* #cab: the plastic arcade cabinet around the screen (borders + shadows). */
-  #cab{position:relative;padding:14px;background:#2a2a3a;border:4px solid #111;
-    box-shadow:0 0 0 4px #44446a, 0 0 40px #000, inset 0 0 20px #000;
-    border-radius:8px;width:min(96vw,988px);}
-  /* #screen: the CRT. aspect-ratio 8/5 matches the 320x200 canvas below. */
-  #screen{position:relative;width:100%;aspect-ratio:8/5;background:#000;
-    border:4px solid #0d0d14;overflow:hidden;touch-action:none;cursor:pointer;}
-  /* canvas: pixelated = keep chunky retro pixels when scaled up, no blur. */
+  /* Portrait-only full-screen layout: game fills viewport, controls pin to bottom */
+  #wrap{position:absolute;inset:0;display:flex;flex-direction:column;align-items:stretch;
+    background:#0a0a12;padding-top:env(safe-area-inset-top,0px);}
+  #cab{display:flex;flex-direction:column;flex:1;min-height:0;}
+  /* Game screen: grows to fill all height not taken by touch controls */
+  #screen{flex:1;min-height:0;width:100%;position:relative;background:#000;
+    overflow:hidden;touch-action:none;cursor:pointer;}
   canvas#game{width:100%;height:100%;display:block;image-rendering:pixelated;
     image-rendering:crisp-edges;background:#000;}
-  /* CRT scanlines + vignette */
+  /* CRT scanlines — subtle, every 4px, soft opacity */
   #screen::after{content:'';position:absolute;inset:0;pointer-events:none;
     background:repeating-linear-gradient(to bottom,
-      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,.28) 3px, rgba(0,0,0,.28) 4px);
+      rgba(0,0,0,0) 0px,rgba(0,0,0,0) 3px,rgba(0,0,0,.10) 4px);
     mix-blend-mode:multiply;}
+  /* CRT vignette — gentle edge darkening */
   #screen::before{content:'';position:absolute;inset:0;pointer-events:none;z-index:5;
-    background:radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%);}
-  #marquee{text-align:center;color:#ffe14d;font-weight:bold;font-size:clamp(12px,2.4vw,22px);
-    letter-spacing:2px;text-shadow:2px 2px 0 #a33, 4px 4px 0 #000;margin:0 0 8px 0;}
-  #marquee span{color:#7df9ff;}
-  #hint{text-align:center;color:#8b8ba3;font-size:clamp(9px,1.4vw,12px);margin:8px 0 0 0;line-height:1.6;}
-  #hint b{color:#ffe14d;}
-  /* ---- touch controls (hidden on desktop) ---- */
-  #touch{display:none;margin-top:10px;flex-direction:column;gap:8px;}
-  .trow{display:flex;gap:8px;}
-  .tbtn{flex:1;min-height:56px;min-width:0;border:3px solid #111;border-radius:8px;
+    background:radial-gradient(ellipse at center,rgba(0,0,0,0) 60%,rgba(0,0,0,.32) 100%);}
+  #marquee{display:none;}
+  #hint{display:none;}
+  /* Touch controls: always visible, safe-area aware */
+  #touch{display:flex;flex-direction:column;gap:5px;flex-shrink:0;
+    padding:6px;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));
+    background:#111118;border-top:2px solid #2a2a40;}
+  .trow{display:flex;gap:5px;}
+  .tbtn{flex:1;min-height:48px;min-width:0;border:2px solid #111;border-radius:6px;
     background:#3d3d5c;color:#fff;font-family:inherit;font-weight:bold;
-    font-size:15px;letter-spacing:1px;touch-action:none;cursor:pointer;
-    box-shadow:0 3px 0 #111, inset 0 2px 0 rgba(255,255,255,.25);}
-  .tbtn small{display:block;font-size:10px;font-weight:normal;color:#c9c9de;letter-spacing:0;}
+    font-size:13px;letter-spacing:1px;touch-action:none;cursor:pointer;
+    box-shadow:0 3px 0 #111,inset 0 2px 0 rgba(255,255,255,.25);}
+  .tbtn small{display:block;font-size:9px;font-weight:normal;color:#c9c9de;letter-spacing:0;}
   .tbtn:active,.tbtn.held{transform:translateY(2px);box-shadow:0 1px 0 #111;filter:brightness(1.25);}
   .tbtn.pwr{background:#14532d;border-color:#0a2e18;}
   .tbtn.brk{background:#6b1a1a;border-color:#3a0d0d;}
   .tbtn.doors{background:#0a3a6e;}
   .tbtn.go{background:#0f6;color:#04140a;}
   .tbtn.emg{background:#7a1010;}
-  .tbtn.util{background:#26263a;font-size:13px;min-height:48px;}
-  /* show touch UI on touch devices */
-  @media (pointer:coarse){
-    #touch{display:flex;}
-    #hint{display:none;}
-  }
-  body.touch #touch{display:flex;}
-  body.touch #hint{display:none;}
-  /* small / landscape phones: shrink chrome, keep screen + buttons on screen */
-  @media (max-width:700px){
-    #wrap{align-items:flex-start;}
-    #cab{padding:8px;border-width:3px;}
-    #marquee{font-size:14px;letter-spacing:1px;margin-bottom:6px;}
-    #screen{width:100%;max-height:52dvh;margin:0 auto;}
-    .tbtn{min-height:60px;font-size:16px;}
-    .tbtn.util{min-height:50px;}
-  }
-  @media (max-height:500px) and (orientation:landscape){
-    #cab{padding:6px;}
-    #marquee{display:none;}
-    #screen{max-height:58dvh;}
-    #touch{gap:6px;margin-top:6px;}
-    .tbtn{min-height:48px;font-size:14px;}
-    .tbtn.util{min-height:42px;}
-  }
+  .tbtn.util{background:#26263a;font-size:11px;min-height:42px;}
 </style>
 </head>
 <body>
@@ -111,8 +79,7 @@
      The canvas is only 320x200 pixels internally — CSS stretches it big. -->
 <div id="wrap">
   <div id="cab">
-    <p id="marquee">SUPER SUBWAY <span>'94</span> ★ 16-BIT DRIVER ★</p>
-    <div id="screen"><canvas id="game" width="320" height="200"></canvas></div>
+    <div id="screen"><canvas id="game" width="200" height="320"></canvas></div>
     <!-- Touch controls: two rows of big buttons. Hidden on desktop via CSS
          (only shown for coarse pointers / body.touch). IDs are wired in JS. -->
     <div id="touch" aria-label="Touch controls">
@@ -152,13 +119,13 @@
 // COCKPIT_H: bottom HUD height. FOCAL: like camera zoom (bigger = narrower).
 // CAM_H: camera height above track. CEIL_H: tunnel roof height.
 // TUN_HALF: tunnel half-width in world units. ROOF_TOP: top clip row.
-const W = 320, H = 200;
-const HORIZON = 84;
-const COCKPIT_H = 62;
-const FOCAL = 110;
+const W = 200, H = 320;
+const HORIZON = 95;
+const COCKPIT_H = 90;
+const FOCAL = 100;
 const CAM_H = 14;
 const CEIL_H = 40;      // tunnel roof height (world units, camera at CAM_H)
-const TUN_HALF = 90;    // tunnel half-width (world units)
+const TUN_HALF = 75;    // tunnel half-width (world units, narrower for portrait)
 const ROOF_TOP = 16;    // highest screen row the roof render covers
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -247,6 +214,32 @@ function speedSignSprite(kmh){
     g.fillText(t,t.length>2?1:5,3);
   });
   speedSignCache[kmh]=c;return c;
+}
+/* Green motivational signs — short quotes on green boards with white text */
+const MSG_QUOTES=['GOOD DRIVING','HAVE A NICE DAY','GREAT WORK','SMOOTH RIDE',
+  'MIND THE GAP','ENJOY THE RIDE','STAY ON TIME','NICE AND STEADY',
+  'KEEP IT UP','SAFE TRAVELS','NEXT STOP SOON','WATCH THE SIGNS',
+  'SMOOTH OPERATOR','GREAT STOP'];
+const msgSignCache={};
+function msgSignSprite(msg){
+  if(msgSignCache[msg])return msgSignCache[msg];
+  const c=makeBmp(48,26,(g)=>{
+    g.clearRect(0,0,48,26);
+    g.fillStyle='#222';g.fillRect(21,14,6,12); // post
+    g.fillStyle='#0a3a0a';g.fillRect(0,0,48,1); // top housing
+    g.fillStyle='#1a6b1a';g.fillRect(0,1,48,13); // green board
+    g.fillStyle='#0a3a0a';g.fillRect(0,14,48,1); // bottom housing
+    g.fillStyle='#fff';g.fillRect(0,1,48,1); g.fillRect(0,13,48,1); // border
+    g.fillStyle='#fff';g.font='bold 5px monospace';g.textBaseline='top';
+    const words=msg.split(' ');
+    // fit two lines
+    const mid=Math.ceil(words.length/2);
+    const l1=words.slice(0,mid).join(' ');
+    const l2=words.slice(mid).join(' ');
+    g.fillText(l1.toUpperCase(),2,2);
+    if(l2)g.fillText(l2.toUpperCase(),2,8);
+  });
+  msgSignCache[msg]=c;return c;
 }
 const sprCurveWarn = makeBmp(18,26,(g)=>{
   g.clearRect(0,0,18,26);
@@ -343,7 +336,7 @@ function startEngine(){
 // the track. trackPos = where the train front is. Stations/signs/lamps are
 // just numbers; rendering converts (objectPos - trackPos) into screen size.
 // New stations are generated forever ahead, old ones pruned behind.
-const NAMES=['NEO TOKYO','PIXEL BAY','CRT CROSS','MODE 7','16 BIT END','VGA VILLE','SPRITE ST','RASTER RD','COPPER CT','BLITTER B'];
+const NAMES=['BERGKRYSTALLEN','MUNKELIA','KARLSRUD','LAMBERTSETER','BRATTLIKOLLEN','RYEN','HØYENHALL','MANGLERUD','BRYNSENG','HELSFYR','ENSJØ','LØREN','GRØNLAND','TØYEN','JERNBANETORGET','STORTINGET','NATIONALTHEATRET','MAJORSTUEN','BLINDERN','FORSKNINGSPARKEN','ULLEVÅL STADION','NYDALEN','STORO','SINSEN','RISLØKKA','LINDERUD','VOLLEBEKK','VEITVET','KALBAKKEN','RØDTVET','AMMERUD','GRORUD','ROMSÅS','STOVNER','ROMMEN','VESTLI'];
 const STATIONS=[]; // {name,pos,signal:'red'|'green',arrived}
 const ST_HALF=110;          // platform half-length (m)
 const STOP_OFF=80;          // optimal stop point sits this far past platform centre (far end)
@@ -381,7 +374,8 @@ function addScore(n,label){
   if(label){popups.push({txt:(n>=0?'+':'')+n+' '+label,t:2.4,color:n>=0?'#0f6':'#f44'});if(popups.length>6)popups.shift();}
 }
 function resetLegFlags(){legClean=true;approachAwarded=false;emergencyUsed=false;distClean=0;overSpeedT=0;}
-const VMAX=45, ST_VMAX=16;
+const VMAX=45, ST_VMAX=20;
+const SPEED_SCALE=2; // world scrolls 2× per m/s — numbers stay, feel doubles
 const LIM_KMH_TOP=170;
 /* endless speed-limit zones: [{at, vms}] — each zone starts with a trackside sign */
 // ensureLimits: keep ~1400m of random limit zones generated ahead of the train
@@ -391,10 +385,36 @@ const SPEEDS=[42,34,27,20,14]; // m/s ≈ 151/122/97/72/50 km/h
 function ensureLimits(){
   let lastAt=LIMITS.length?LIMITS[LIMITS.length-1].at:-100;
   while(lastAt<trackPos+1400){
-    lastAt+=380+Math.floor(Math.random()*420);
-    LIMITS.push({at:lastAt,vms:SPEEDS[Math.floor(Math.random()*SPEEDS.length)]});
+    let at=lastAt+160+Math.floor(Math.random()*200);
+    let vms=SPEEDS[Math.floor(Math.random()*SPEEDS.length)];
+    // snap to nearby curve start and set 50 km/h
+    let prevSh=curveSharp(at-50)<0.09;
+    for(let dp=-40;dp<=80;dp+=8){
+      const sh=curveSharp(at+dp);
+      if(prevSh&&sh>0.11){
+        const snap=at+dp-12;
+        if(snap>lastAt+60){at=snap;vms=14;}
+        break;
+      }
+      prevSh=sh<0.09;
+    }
+    lastAt=at;
+    LIMITS.push({at:lastAt,vms});
   }
-  if(LIMITS.length>48)LIMITS.splice(0,LIMITS.length-48);
+  if(LIMITS.length>80)LIMITS.splice(0,LIMITS.length-80);
+}
+/* Green motivational signs alongside the track */
+const MSGSIGNS=[];
+function ensureMsgSigns(){
+  let lastAt=MSGSIGNS.length?MSGSIGNS[MSGSIGNS.length-1].at:-40;
+  while(lastAt<trackPos+1400){
+    lastAt+=180+Math.floor(Math.random()*160);
+    const nearLim=LIMITS.some(z=>Math.abs(z.at-lastAt)<70);
+    if(!nearLim){
+      MSGSIGNS.push({at:lastAt,msg:MSG_QUOTES[Math.floor(Math.random()*MSG_QUOTES.length)]});
+    }
+  }
+  if(MSGSIGNS.length>80)MSGSIGNS.splice(0,MSGSIGNS.length-80);
 }
 function zoneLimitAt(p){
   let v=LIMITS.length?LIMITS[0].vms:42;
@@ -492,8 +512,9 @@ function startGame(){
   doorsOpen=false;doorTimer=0;boarded=false;nextStIdx=0;score=0;stopsDone=0;
   late=0;timeLeft=90;departOk=false;stationBonusMsg='';msgTimer=0;
   popups.length=0;resetLegFlags();
-  STATIONS.length=0;pushStation(800,'NEO TOKYO');
+  STATIONS.length=0;pushStation(800,pickName());
   LIMITS.length=0;LIMITS.push({at:0,vms:42});ensureLimits();
+  MSGSIGNS.length=0;ensureMsgSigns();
   state='drive';chime();
 }
 // called once boarding is finished: turns THIS station green + lays random track ahead
@@ -527,7 +548,7 @@ function tryDoors(){
   const err=st?Math.abs(trackPos-stopPos(st)):9999;
   if(speed>0.6){stationBonusMsg='TOO FAST FOR DOORS!';msgTimer=2;beep(140,0.25);return;}
   if(!st){return;}
-  if(err>25){stationBonusMsg='NO PLATFORM HERE!';msgTimer=2;beep(140,0.25);return;}
+  if(err>40){stationBonusMsg='NO PLATFORM HERE!';msgTimer=2;beep(140,0.25);return;}
   if(!doorsOpen){ // open — station reached => exit signal goes RED
     doorsOpen=true;state='doors';doorTimer=6;boarded=false;
     st.signal='red';st.arrived=true;
@@ -602,7 +623,6 @@ function render(dt){
   }
   const camC=trackCurve(trackPos);
   const stNow=inStation(trackPos);
-  const nightFlick = (Math.sin(frame*0.3)>0.97)?0.85:1;
 
   // sky / tunnel back
   const bg=ctx.createLinearGradient(0,0,0,HORIZON);
@@ -658,7 +678,7 @@ function render(dt){
     const z=(CAM_H*FOCAL)/dy;             // world depth of this row
     const wz=trackPos+z;
     const s=FOCAL/z;
-    const halfRoad=26*s, halfTun=TUN_HALF*s; // road half-width, tunnel half-width (px)
+    const halfRoad=14*s, halfTun=TUN_HALF*s; // road half-width, tunnel half-width (px)
     const cx=W/2-((trackCurve(wz)-camC))*s-lookX*8*(1-z/600);
     // tunnel walls (brick courses scroll past)
     const inSt = inStation(wz);
@@ -782,10 +802,21 @@ function render(dt){
       drawScaledBmp(speedSignSprite(Math.round(z.vms*3.6)),-42,off,26,28);
     }
     let warn=-1;
-    for(let zz=80;zz<520;zz+=20){
-      if(curveLimitAt(trackPos+zz)<zoneLimitAt(trackPos+zz)-2.5){warn=zz;break;}
+    {
+      let prevSh=curveSharp(trackPos+20)<0.09;
+      for(let zz=30;zz<500;zz+=12){
+        const sh=curveSharp(trackPos+zz);
+        if(prevSh&&sh>0.11){warn=Math.max(0,zz-12);break;}
+        prevSh=sh<0.09;
+      }
     }
     if(warn>0)drawScaledBmp(sprCurveWarn,42,warn,18,26);
+    // green motivational signs on the right wall
+    for(const ms of MSGSIGNS){
+      const off=ms.at-trackPos;
+      if(off<-20||off>520)continue;
+      drawScaledBmp(msgSignSprite(ms.msg),38,off,48,26);
+    }
   }
   // stations: pillars, benches, people, boards, STOP marker
   for(const st of STATIONS){
@@ -906,9 +937,6 @@ function render(dt){
     ctx.fillStyle=`rgba(255,0,0,${0.12+0.1*Math.sin(frame*0.5)})`;
     ctx.fillRect(0,0,W,H);
   }
-  // CRT dither lines
-  ctx.fillStyle='rgba(0,0,0,0.12)';
-  for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,1);
 }
 function drawHornWaves(vx){
   if(hornT<=0)return;
@@ -923,83 +951,90 @@ function drawHornWaves(vx){
 
 function drawCockpit(dt, stNow){
   const y0=H-COCKPIT_H;
-  // panel base with 16-bit bevel
+  // panel base
   ctx.fillStyle='#1b1b28';ctx.fillRect(0,y0,W,COCKPIT_H);
   ctx.fillStyle='#3d3d5c';ctx.fillRect(0,y0,W,3);
   ctx.fillStyle='#0a0a12';ctx.fillRect(0,y0+3,W,2);
-  ctx.fillStyle='#26263a';ctx.fillRect(8,y0+10,120,34);
-  ctx.fillStyle='#000';ctx.fillRect(10,y0+12,116,30);
   // windshield pillars
-  ctx.fillStyle='#101018';ctx.fillRect(0,y0-6,14,10);ctx.fillRect(W-14,y0-6,14,10);
+  ctx.fillStyle='#101018';ctx.fillRect(0,y0-6,10,10);ctx.fillRect(W-10,y0-6,10,10);
 
-  // --- speedometer: chunky pixel needle ---
+  // LEFT: speedometer (x 0–50) + LIM sign (x 52–96)
   const kmh=speed*3.6;
-  ctx.fillStyle='#0f0';ctx.font='bold 7px monospace';ctx.textAlign='left';
-  ctx.fillText('KM/H',14,y0+18);
+  ctx.fillStyle='#0f0';ctx.font='bold 6px monospace';ctx.textAlign='left';
+  ctx.fillText('KM/H',4,y0+12);
   ctx.fillStyle='#7df9ff';ctx.font='bold 16px monospace';
-  ctx.fillText(String(Math.round(kmh)).padStart(3,' '),14,y0+36);
-  // bar
-  ctx.fillStyle='#333';ctx.fillRect(64,y0+16,58,6);
+  ctx.fillText(String(Math.round(kmh)).padStart(3,' '),2,y0+30);
+  // speed bar
+  ctx.fillStyle='#333';ctx.fillRect(2,y0+33,44,3);
   const frac=Math.min(1,kmh/LIM_KMH_TOP);
   ctx.fillStyle=frac>0.8?'#f22':frac>0.6?'#ffe14d':'#0f6';
-  ctx.fillRect(64,y0+16,58*frac,6);
-  // speed limit plaque
-  const lim=speedLimitAt(trackPos)*3.6;
-  ctx.fillStyle='#ffe14d';ctx.fillRect(64,y0+26,58,12);
-  ctx.fillStyle='#000';ctx.font='bold 8px monospace';
-  ctx.fillText('LIM '+Math.round(lim),66,y0+35);
+  ctx.fillRect(2,y0+33,44*frac,3);
+  // Speed limit sign (styled like trackside signs) — shows static zone limit
+  const limKmh=Math.round(zoneLimitAt(trackPos)*3.6);
+  ctx.fillStyle='#8b8ba3';ctx.font='bold 5px monospace';
+  ctx.fillText('LIM',52,y0+8);
+  ctx.fillStyle='#111';ctx.fillRect(50,y0+9,46,30);        // housing
+  ctx.fillStyle='#000';ctx.fillRect(51,y0+10,44,28);       // black border
+  ctx.fillStyle='#ffe14d';ctx.fillRect(53,y0+12,40,24);    // yellow board
+  ctx.fillStyle='#000';ctx.fillRect(53,y0+12,40,3);        // top band
+  ctx.fillStyle='#000';ctx.fillRect(53,y0+33,40,3);        // bottom band
+  ctx.fillStyle='#000';ctx.font='bold 13px monospace';ctx.textAlign='center';
+  ctx.fillText(String(limKmh),73,y0+32);ctx.textAlign='left';
 
-  // --- power / brake notches as chunky blocks ---
-  ctx.fillStyle='#8b8ba3';ctx.font='bold 7px monospace';
-  ctx.fillText('PWR',140,y0+16);ctx.fillText('BRK',140,y0+30);
+  // RIGHT: PWR/BRK notch blocks (x 100–196)
+  ctx.fillStyle='#8b8ba3';ctx.font='bold 6px monospace';
+  ctx.fillText('PWR',102,y0+14);ctx.fillText('BRK',102,y0+26);
   for(let i=0;i<4;i++){
-    ctx.fillStyle=i<throttle?'#0f6':'#123322';ctx.fillRect(168+i*12,y0+10,10,8);
-    ctx.fillStyle='#000';ctx.fillRect(168+i*12,y0+10,10,1);
+    ctx.fillStyle=i<throttle?'#0f6':'#123322';ctx.fillRect(122+i*11,y0+8,9,7);
+    ctx.fillStyle='#000';ctx.fillRect(122+i*11,y0+8,9,1);
   }
   for(let i=0;i<4;i++){
-    ctx.fillStyle=i<brake?'#f44':'#331111';ctx.fillRect(168+i*12,y0+24,10,8);
+    ctx.fillStyle=i<brake?'#f44':'#331111';ctx.fillRect(122+i*11,y0+20,9,7);
   }
-  if(emergency){ctx.fillStyle='#f00';ctx.font='bold 8px monospace';ctx.fillText('!EMERG!',168,y0+42);}
+  if(emergency){ctx.fillStyle='#f00';ctx.font='bold 7px monospace';ctx.fillText('!EMERG!',102,y0+38);}
 
-  // --- door lamps + clock ---
-  ctx.fillStyle=doorsOpen?'#0f6':'#333';ctx.fillRect(228,y0+10,10,10);
-  ctx.fillStyle='#8b8ba3';ctx.font='bold 7px monospace';ctx.fillText('DOOR',242,y0+18);
-  ctx.fillStyle='#7df9ff';ctx.font='bold 8px monospace';
-  ctx.fillText('T-'+Math.max(0,Math.ceil(timeLeft))+'s',228,y0+32);
-  ctx.fillStyle='#ffe14d';ctx.font='bold 8px monospace';
-  ctx.fillText('SCORE '+score,228,y0+43);
+  // MIDDLE ROW: door lamp + timer + score
+  const r2=y0+44;
+  ctx.fillStyle=doorsOpen?'#0f6':'#333';ctx.fillRect(6,r2,8,8);
+  ctx.fillStyle='#8b8ba3';ctx.font='bold 6px monospace';ctx.fillText('DR',18,r2+7);
+  ctx.fillStyle='#7df9ff';ctx.font='bold 7px monospace';
+  ctx.fillText('T-'+Math.max(0,Math.ceil(timeLeft))+'s',36,r2+7);
+  ctx.fillStyle='#ffe14d';
+  ctx.fillText('S:'+score,88,r2+7);
 
-  // --- next station + distance bar ---
+  // BOTTOM: next station + distance bar
   const st=STATIONS[nextStIdx];
   if(st){
     const d=stopPos(st)-trackPos;
-    ctx.fillStyle='#8b8ba3';ctx.font='bold 7px monospace';
-    const label='NEXT:'+st.name.slice(0,10)+(d<0?' (MISSED?)':'');
-    ctx.fillText(label,8,y0+52);
-    ctx.fillStyle='#333';ctx.fillRect(150,y0+48,110,6);
+    ctx.fillStyle='#8b8ba3';ctx.font='bold 6px monospace';
+    ctx.fillText('NEXT:'+st.name.slice(0,11)+(d<0?' (!)':''),6,y0+59);
+    ctx.fillStyle='#333';ctx.fillRect(6,y0+63,152,5);
     const dd=Math.max(0,Math.min(1,1-d/800));
-    ctx.fillStyle=d<0?'#f44':'#7df9ff';ctx.fillRect(150,y0+48,110*dd,6);
-    ctx.fillStyle='#fff';ctx.font='bold 7px monospace';ctx.textAlign='right';
-    ctx.fillText((d>=0?Math.round(d):0)+'m',318,y0+53);ctx.textAlign='left';
-    // stop marker lights when close
-    if(Math.abs(d)<30&&speed<3){
+    ctx.fillStyle=d<0?'#f44':'#7df9ff';ctx.fillRect(6,y0+63,152*dd,5);
+    ctx.fillStyle='#fff';ctx.font='bold 6px monospace';ctx.textAlign='right';
+    ctx.fillText((d>=0?Math.round(d):0)+'m',W-4,y0+68);ctx.textAlign='left';
+    // stop zone flash
+    if(Math.abs(d)<45&&speed<3){
       const on=Math.sin(frame*0.4)>0;
       ctx.fillStyle=on?'#0f6':'#063';
-      ctx.fillRect(264,y0+48,50,6);
-      ctx.fillStyle='#000';ctx.font='bold 6px monospace';ctx.fillText('STOP ZONE',268,y0+53);
+      ctx.fillRect(6,y0+63,152,5);
+      ctx.fillStyle='#000';ctx.font='bold 5px monospace';ctx.fillText('STOP ZONE',10,y0+68);
     }
   }
-  // control levers art
-  ctx.fillStyle='#44446a';ctx.fillRect(0,H-6,W,6);
+  // hi-score line
+  ctx.fillStyle='#555566';ctx.font='bold 6px monospace';ctx.textAlign='right';
+  ctx.fillText('HI:'+hiScore,W-4,y0+79);ctx.textAlign='left';
+  // bottom bar
+  ctx.fillStyle='#33334a';ctx.fillRect(0,H-4,W,4);
 }
 
 function drawHUD(stNow){
   ctx.textAlign='left';ctx.font='bold 8px monospace';
   // top bar
   ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(0,0,W,16);
-  ctx.fillStyle='#7df9ff';ctx.fillText("SUPER SUBWAY '94",4,11);
+  ctx.fillStyle='#7df9ff';ctx.fillText("SUBWAY '94",4,11);
   ctx.fillStyle='#ffe14d';ctx.textAlign='right';
-  ctx.fillText('ST.'+(stopsDone+1)+' PTS:'+score+' HI:'+hiScore,W-4,11);
+  ctx.fillText('ST.'+(stopsDone+1)+' '+score+'pts',W-4,11);
   ctx.textAlign='left';
   // exit-signal repeater: mirrors the nearest gantry still ahead
   {
@@ -1020,8 +1055,8 @@ function drawHUD(stNow){
   if(stNow){
     ctx.font='bold 10px monospace';ctx.textAlign='center';
     const wob=Math.sin(frame*0.1)*1;
-    ctx.fillStyle='#000';ctx.fillRect(W/2-90,42+wob,180,16);
-    ctx.fillStyle='#0a1a6e';ctx.fillRect(W/2-89,43+wob,178,14);
+    ctx.fillStyle='#000';ctx.fillRect(W/2-76,42+wob,152,16);
+    ctx.fillStyle='#0a1a6e';ctx.fillRect(W/2-75,43+wob,150,14);
     ctx.fillStyle='#fff';ctx.fillText('== '+stNow.name+' ==',W/2,54+wob);
     ctx.textAlign='left';
   }
@@ -1034,7 +1069,7 @@ function drawHUD(stNow){
       let txt,col;
       if(state==='doors'){txt='■ BOARDING — WAIT FOR GREEN';col='#0f6';}
       else if(d<0){txt='OVER BY '+Math.round(-d)+'m — TOO FAR!';col='#f44';}
-      else if(d<=25){txt='★ STOP! '+Math.round(d)+'m ★';col=(Math.sin(frame*0.3)>0)?'#0f6':'#8fffb0';}
+      else if(d<=40){txt='★ STOP! '+Math.round(d)+'m ★';col=(Math.sin(frame*0.3)>0)?'#0f6':'#8fffb0';}
       else{txt='STOP IN '+Math.round(d)+'m';col='#7df9ff';}
       ctx.font='bold 9px monospace';
       const wdt=ctx.measureText(txt).width+14;
@@ -1044,7 +1079,7 @@ function drawHUD(stNow){
   }
   // door prompt
   const st=STATIONS[nextStIdx];
-  if(st&&state==='drive'&&Math.abs(trackPos-stopPos(st))<25&&speed<0.6){
+  if(st&&state==='drive'&&Math.abs(trackPos-stopPos(st))<40&&speed<0.6){
     const on=Math.sin(frame*0.3)>0;
     if(on){ctx.font='bold 8px monospace';ctx.textAlign='center';
       ctx.fillStyle='#000';ctx.fillText('PRESS D — OPEN DOORS',W/2+1,HORIZON+34+1);
@@ -1064,47 +1099,48 @@ function drawHUD(stNow){
 }
 
 function drawTitle(){
-  ctx.fillStyle='rgba(0,0,10,0.82)';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(0,0,10,0.84)';ctx.fillRect(0,0,W,H);
   ctx.textAlign='center';
-  ctx.fillStyle='#ffe14d';ctx.font='bold 22px monospace';
-  ctx.fillText('SUPER SUBWAY',W/2,52);
-  ctx.fillStyle='#7df9ff';ctx.font='bold 16px monospace';
-  ctx.fillText("'94",W/2,70);
-  ctx.fillStyle='#8b8ba3';ctx.font='bold 8px monospace';
-  ctx.fillText('16-BIT SCALING BITMAP DRIVER',W/2,84);
+  ctx.fillStyle='#ffe14d';ctx.font='bold 20px monospace';
+  ctx.fillText('SUPER SUBWAY',W/2,80);
+  ctx.fillStyle='#7df9ff';ctx.font='bold 14px monospace';
+  ctx.fillText("'94",W/2,100);
+  ctx.fillStyle='#8b8ba3';ctx.font='bold 7px monospace';
+  ctx.fillText('16-BIT SCALING BITMAP DRIVER',W/2,118);
   ctx.fillStyle='#0f6';ctx.font='bold 8px monospace';
   const blink=Math.sin(frame*0.15)>0;
-  if(blink)ctx.fillText('- PRESS ENTER TO START -',W/2,110);
+  if(blink)ctx.fillText('— PRESS START TO GO —',W/2,150);
   ctx.fillStyle='#ccc';ctx.font='7px monospace';
-  ctx.fillText('STOP IN THE YELLOW ZONE — RED MEANS WAIT',W/2,124);
-  ctx.fillText('GREEN MEANS GO — WATCH SIGNS + CURVES!',W/2,134);
-  ctx.fillText('UP=POWER DOWN=BRAKE SPACE=EMERGENCY',W/2,144);
-  ctx.fillText('D=DOORS H=HORN  SPEEDING LOSES POINTS!',W/2,154);
-  ctx.fillStyle='#555';ctx.fillText('(C) 1994 NEO TRANSIT WORKS',W/2,170);
+  ctx.fillText('STOP IN THE YELLOW ZONE',W/2,174);
+  ctx.fillText('RED = WAIT  GREEN = GO',W/2,185);
+  ctx.fillText('PWR/BRK to drive  SPACE=EMERG',W/2,196);
+  ctx.fillText('D=DOORS  H=HORN  M=MUTE',W/2,207);
+  ctx.fillText('SPEEDING LOSES POINTS!',W/2,218);
+  ctx.fillStyle='#555';ctx.fillText('(C) 1994 NEO TRANSIT WORKS',W/2,244);
   ctx.textAlign='left';
 }
 function drawDoorsOverlay(){
-  // boarding progress bar + people shuffle sfx ticks
   ctx.textAlign='center';ctx.font='bold 8px monospace';
-  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(W/2-80,HORIZON+48,160,22);
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(W/2-72,HORIZON+48,144,22);
   ctx.fillStyle='#0f6';ctx.fillText('BOARDING...',W/2,HORIZON+57);
-  ctx.fillStyle='#333';ctx.fillRect(W/2-70,HORIZON+60,140,6);
-  ctx.fillStyle='#0f6';ctx.fillRect(W/2-70,HORIZON+60,140*(1-doorTimer/6),6);
-  ctx.fillStyle='#8b8ba3';ctx.fillText('D = CLOSE → GREEN → GO',W/2,HORIZON+78);
+  ctx.fillStyle='#333';ctx.fillRect(W/2-64,HORIZON+60,128,6);
+  ctx.fillStyle='#0f6';ctx.fillRect(W/2-64,HORIZON+60,128*(1-doorTimer/6),6);
+  ctx.fillStyle='#8b8ba3';ctx.font='bold 7px monospace';
+  ctx.fillText('D = CLOSE → GREEN → GO',W/2,HORIZON+78);
   ctx.textAlign='left';
 }
 function drawDone(){
   ctx.fillStyle='rgba(0,0,10,0.85)';ctx.fillRect(0,0,W,H);
   ctx.textAlign='center';
   ctx.fillStyle='#0f6';ctx.font='bold 16px monospace';
-  ctx.fillText('SHIFT COMPLETE!',W/2,70);
+  ctx.fillText('SHIFT COMPLETE!',W/2,118);
   ctx.fillStyle='#ffe14d';ctx.font='bold 10px monospace';
-  ctx.fillText('SCORE: '+score+' PTS',W/2,95);
+  ctx.fillText('SCORE: '+score+' PTS',W/2,146);
   ctx.fillStyle='#ccc';ctx.font='8px monospace';
-  ctx.fillText('STOPS: '+stopsDone+' / '+STATIONS.length,W/2,112);
+  ctx.fillText('STOPS: '+stopsDone,W/2,166);
   ctx.fillStyle=score>1100?'#7df9ff':'#8b8ba3';
-  ctx.fillText(score>1100?'RANK: LEGEND DRIVER ★':score>700?'RANK: PRO DRIVER':'RANK: ROOKIE',W/2,128);
-  if(Math.sin(frame*0.15)>0){ctx.fillStyle='#fff';ctx.fillText('ENTER = DRIVE AGAIN',W/2,150);}
+  ctx.fillText(score>1100?'LEGEND DRIVER ★':score>700?'PRO DRIVER':'ROOKIE',W/2,184);
+  if(Math.sin(frame*0.15)>0){ctx.fillStyle='#fff';ctx.fillText('START = DRIVE AGAIN',W/2,222);}
   ctx.textAlign='left';
 }
 
@@ -1112,7 +1148,8 @@ function drawDone(){
 // update(now): physics + rules, then render(). requestAnimationFrame gives us
 // `now` (ms timestamp); dt clamps to 0.05s so tab-switch lag can't teleport.
 // accel: throttle pushes (+1.4/notch), brakes pull (-2/notch), emergency
-// slams (-6), plus drag (-speed*0.055) and rolling friction (-0.25).
+// slams (-6). Drag and rolling friction only apply when braking or emergency —
+// at zero throttle with no brakes the train coasts at constant speed.
 // Then: move (trackPos += speed*dt), limits, overspeed fines, clean-run
 // trickle bonus, approach bonus, missed-station penalty, door timer,
 // engine hum pitch. Doors state freezes the train (speed=0).
@@ -1121,14 +1158,16 @@ function update(now){
   let dt=Math.min(0.05,(now-last)/1000);last=now;
   if(state==='drive'||state==='doors'){
     // physics: 16-bit chunky notches
-    const accel = throttle*1.4 - brake*2.0 - (emergency?6:0) - speed*0.055 - (speed>0?0.25:0);
+    const decelerating = brake>0 || emergency;
+    const drag = decelerating ? (speed*0.055 + (speed>0?0.25:0)) : 0;
+    const accel = throttle*1.4 - brake*2.0 - (emergency?6:0) - drag;
     if(state==='doors'){speed=0;}
     else{
       speed+=accel*dt;
       if(speed<0)speed=0;
       if(speed>VMAX+5)speed=VMAX+5;
-      trackPos+=speed*dt;
-      ensureLimits();
+      trackPos+=speed*dt*SPEED_SCALE;
+      ensureLimits(); ensureMsgSigns();
       // prune long-served stations behind us (keeps loops cheap; index follows)
       while(STATIONS.length&&STATIONS[0].pos<trackPos-400&&nextStIdx>0){STATIONS.shift();nextStIdx--;}
       // overspeed: escalating deduction + alarm while over the limit

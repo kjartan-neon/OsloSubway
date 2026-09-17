@@ -1,19 +1,56 @@
 <!DOCTYPE html>
+<!-- ============================================================================
+  SUPER SUBWAY '94 — 16-bit Subway Driver
+  ----------------------------------------------------------------------------
+  WHAT IS THIS? A complete game in ONE file (HTML + CSS + JavaScript).
+  No build step, no libraries. Open index.html in a browser and it runs.
+  It is published with GitHub Pages (see .github/workflows/pages.yml).
+
+  HOW TO READ THIS FILE (junior-dev map):
+    1. HEAD + STYLE    → page layout, arcade cabinet look, mobile buttons.
+    2. BODY            → canvas (#game) + touch buttons + hint text.
+    3. SCRIPT section  → the whole game, in order:
+         a. Constants    → world sizes, camera numbers (W, H, FOCAL…).
+         b. Sprites      → tiny pixel pictures drawn with code (makeBmp).
+         c. Audio        → bleeps with WebAudio (beep, chime, engine hum).
+         d. Track/state  → stations, speed limits, score, game state.
+         e. Input        → keyboard + touch buttons call the same functions.
+         f. Projection   → 3D-to-2D math (projectY) so far things look small.
+         g. Render       → draws tunnel row-by-row + sprites + dashboard.
+         h. Update       → physics + scoring, called ~60x/second.
+
+  KEY IDEA: the "3D" is fake. Each horizontal screen row = one depth (z)
+  down the tunnel. Near rows = close (big), horizon rows = far (tiny).
+  Sprites are then scaled by s = FOCAL / z. That is the whole trick.
+============================================================================= -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>SUPER SUBWAY '94 — 16-bit Subway Driver</title>
 <style>
-  html,body{margin:0;padding:0;background:#0a0a12;height:100%;overflow:hidden;
-    font-family:'Courier New',monospace;user-select:none;-webkit-user-select:none;}
+  /* BASE: border-box makes widths predictable; tap highlight off for game feel. */
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  /* html/body: full-screen dark stage. dvh = "dynamic viewport height" so the
+     page still fits when the phone URL bar shows/hides. */
+  html,body{margin:0;padding:0;background:#0a0a12;height:100%;height:100dvh;overflow:hidden;
+    font-family:'Courier New',monospace;user-select:none;-webkit-user-select:none;
+    touch-action:manipulation;overscroll-behavior:none;-webkit-text-size-adjust:100%;}
+  /* #wrap: centers the arcade cabinet. env(safe-area-inset-*) avoids notches. */
   #wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(circle at 50% 30%, #1a1a2e 0%, #050508 70%);}
+    background:radial-gradient(circle at 50% 30%, #1a1a2e 0%, #050508 70%);
+    padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));overflow-y:auto;}
+  /* #cab: the plastic arcade cabinet around the screen (borders + shadows). */
   #cab{position:relative;padding:14px;background:#2a2a3a;border:4px solid #111;
     box-shadow:0 0 0 4px #44446a, 0 0 40px #000, inset 0 0 20px #000;
-    border-radius:8px;}
-  #screen{position:relative;width:min(92vw,960px);aspect-ratio:8/5;background:#000;
-    border:4px solid #0d0d14;overflow:hidden;}
+    border-radius:8px;width:min(96vw,988px);}
+  /* #screen: the CRT. aspect-ratio 8/5 matches the 320x200 canvas below. */
+  #screen{position:relative;width:100%;aspect-ratio:8/5;background:#000;
+    border:4px solid #0d0d14;overflow:hidden;touch-action:none;cursor:pointer;}
+  /* canvas: pixelated = keep chunky retro pixels when scaled up, no blur. */
   canvas#game{width:100%;height:100%;display:block;image-rendering:pixelated;
     image-rendering:crisp-edges;background:#000;}
   /* CRT scanlines + vignette */
@@ -26,27 +63,95 @@
   #marquee{text-align:center;color:#ffe14d;font-weight:bold;font-size:clamp(12px,2.4vw,22px);
     letter-spacing:2px;text-shadow:2px 2px 0 #a33, 4px 4px 0 #000;margin:0 0 8px 0;}
   #marquee span{color:#7df9ff;}
-  #hint{text-align:center;color:#8b8ba3;font-size:clamp(9px,1.4vw,12px);margin:8px 0 0 0;}
+  #hint{text-align:center;color:#8b8ba3;font-size:clamp(9px,1.4vw,12px);margin:8px 0 0 0;line-height:1.6;}
   #hint b{color:#ffe14d;}
+  /* ---- touch controls (hidden on desktop) ---- */
+  #touch{display:none;margin-top:10px;flex-direction:column;gap:8px;}
+  .trow{display:flex;gap:8px;}
+  .tbtn{flex:1;min-height:56px;min-width:0;border:3px solid #111;border-radius:8px;
+    background:#3d3d5c;color:#fff;font-family:inherit;font-weight:bold;
+    font-size:15px;letter-spacing:1px;touch-action:none;cursor:pointer;
+    box-shadow:0 3px 0 #111, inset 0 2px 0 rgba(255,255,255,.25);}
+  .tbtn small{display:block;font-size:10px;font-weight:normal;color:#c9c9de;letter-spacing:0;}
+  .tbtn:active,.tbtn.held{transform:translateY(2px);box-shadow:0 1px 0 #111;filter:brightness(1.25);}
+  .tbtn.pwr{background:#14532d;border-color:#0a2e18;}
+  .tbtn.brk{background:#6b1a1a;border-color:#3a0d0d;}
+  .tbtn.doors{background:#0a3a6e;}
+  .tbtn.go{background:#0f6;color:#04140a;}
+  .tbtn.emg{background:#7a1010;}
+  .tbtn.util{background:#26263a;font-size:13px;min-height:48px;}
+  /* show touch UI on touch devices */
+  @media (pointer:coarse){
+    #touch{display:flex;}
+    #hint{display:none;}
+  }
+  body.touch #touch{display:flex;}
+  body.touch #hint{display:none;}
+  /* small / landscape phones: shrink chrome, keep screen + buttons on screen */
+  @media (max-width:700px){
+    #wrap{align-items:flex-start;}
+    #cab{padding:8px;border-width:3px;}
+    #marquee{font-size:14px;letter-spacing:1px;margin-bottom:6px;}
+    #screen{width:100%;max-height:52dvh;margin:0 auto;}
+    .tbtn{min-height:60px;font-size:16px;}
+    .tbtn.util{min-height:50px;}
+  }
+  @media (max-height:500px) and (orientation:landscape){
+    #cab{padding:6px;}
+    #marquee{display:none;}
+    #screen{max-height:58dvh;}
+    #touch{gap:6px;margin-top:6px;}
+    .tbtn{min-height:48px;font-size:14px;}
+    .tbtn.util{min-height:42px;}
+  }
 </style>
 </head>
 <body>
+<!-- Visible page: arcade cabinet > marquee title, game screen, touch pad, hint.
+     The canvas is only 320x200 pixels internally — CSS stretches it big. -->
 <div id="wrap">
   <div id="cab">
     <p id="marquee">SUPER SUBWAY <span>'94</span> ★ 16-BIT DRIVER ★</p>
     <div id="screen"><canvas id="game" width="320" height="200"></canvas></div>
-    <p id="hint"><b>↑/W</b> power &nbsp;<b>↓/S</b> brake &nbsp;<b>SPACE</b> emergency &nbsp;<b>D</b> doors &nbsp;<b>H</b> horn &nbsp;<b>←→</b> look &nbsp;<b>ENTER</b> start &nbsp;<b>M</b> mute</p>
+    <!-- Touch controls: two rows of big buttons. Hidden on desktop via CSS
+         (only shown for coarse pointers / body.touch). IDs are wired in JS. -->
+    <div id="touch" aria-label="Touch controls">
+      <div class="trow">
+        <button class="tbtn pwr" id="btnPwr" type="button">▲ PWR<small>power +1</small></button>
+        <button class="tbtn brk" id="btnBrk" type="button">▼ BRK<small>brake +1</small></button>
+        <button class="tbtn doors" id="btnDoors" type="button">DOORS<small>open / close</small></button>
+        <button class="tbtn go" id="btnGo" type="button">START<small>tap to go</small></button>
+      </div>
+      <div class="trow">
+        <button class="tbtn util" id="btnLookL" type="button">◀ LOOK</button>
+        <button class="tbtn util" id="btnHorn" type="button">📯 HORN</button>
+        <button class="tbtn util emg" id="btnEmg" type="button">! EMERG</button>
+        <button class="tbtn util" id="btnLookR" type="button">LOOK ▶</button>
+        <button class="tbtn util" id="btnMute" type="button">🔊</button>
+      </div>
+    </div>
+    <p id="hint"><b>↑/W</b> power &nbsp;<b>↓/S</b> brake &nbsp;<b>SPACE</b> emergency &nbsp;<b>D</b> doors &nbsp;<b>H</b> horn &nbsp;<b>←→</b> look &nbsp;<b>ENTER</b> start &nbsp;<b>M</b> mute<br><span style="color:#5a5a75">On mobile: use the buttons below — tap screen to start. Hold PWR/BRK to repeat.</span></p>
   </div>
 </div>
 <script>
 "use strict";
+// Strict mode: catches silent mistakes (undeclared vars, etc.). Good default.
 /* ============================================================
    SUPER SUBWAY '94
    First-person subway driver, 16-bit style, scaling bitmaps.
    Technique: scanline pseudo-3D tunnel renderer (like OutRun /
    SNES Mode-7) + nearest-neighbour scaled sprites.
    All art is procedural pixel bitmaps scaled at runtime.
+   ------------------------------------------------------------
+   GAME LOOP IN ONE SENTENCE:
+   update() runs physics/scoring → render() draws everything →
+   requestAnimationFrame(update) repeats ~60fps. See bottom file.
    ============================================================ */
+// --- World + camera constants (tweak these to change the "feel") ---
+// W/H: canvas pixels. HORIZON: screen row where tunnel vanishes.
+// COCKPIT_H: bottom HUD height. FOCAL: like camera zoom (bigger = narrower).
+// CAM_H: camera height above track. CEIL_H: tunnel roof height.
+// TUN_HALF: tunnel half-width in world units. ROOF_TOP: top clip row.
 const W = 320, H = 200;
 const HORIZON = 84;
 const COCKPIT_H = 62;
@@ -60,12 +165,16 @@ const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
 /* ---------- tiny pixel helpers ---------- */
+// makeBmp: create a small offscreen canvas and let fn(g,w,h) paint on it.
+// We use these as "sprites" — draw once, then stamp scaled copies each frame.
+// Example: makeBmp(8,8,(g)=>{g.fillStyle='red';g.fillRect(0,0,8,8);})
 function makeBmp(w,h,fn){
   const c=document.createElement('canvas');c.width=w;c.height=h;
   const g=c.getContext('2d');g.imageSmoothingEnabled=false;
   fn(g,w,h);return c;
 }
-// 16-bit-ish palette
+// 16-bit-ish palette: one place for all tunnel/track colors so the
+// art style stays consistent. Change a hex here to re-theme the game.
 const PAL = {
   tunnel0:'#151524', tunnel1:'#1c1c30', brick:'#26263e', brickDark:'#191926',
   rail:'#9aa0b8', railHi:'#e8ecff', sleeper:'#4a3220', sleeper2:'#3a2818',
@@ -74,6 +183,9 @@ const PAL = {
 };
 
 /* ---------- procedural sprites (bitmaps that get SCALED) ---------- */
+// No image files! Every lamp, signal, person, bench is painted pixel by
+// pixel with fillRect() above, then drawn big/small with drawImage().
+// "spr" = sprite. They are tiny on purpose — scaling keeps them chunky.
 // ceiling lamp fixture: housing bolted to tunnel ROOF, bulb hangs down
 const sprLamp = makeBmp(24,10,(g)=>{
   g.clearRect(0,0,24,10);
@@ -117,6 +229,8 @@ const sprSignalR = makeBmp(8,18,(g)=>{
   g.fillStyle='#ffb0b0';g.fillRect(3,2,2,1);
   g.fillStyle='#300';g.fillRect(2,11,4,4);
 });
+/* Speed-limit signs are cached: speedSignSprite(50) builds the bitmap once,
+   then reuses it. Without the cache we'd rebuild text every frame (slow). */
 /* max-speed sign per value (yellow board on a post) + sharp-curve warning */
 const speedSignCache={};
 function speedSignSprite(kmh){
@@ -159,6 +273,8 @@ function personSprite(shirt,pants,skin){
     g.fillStyle='#000';g.fillRect(2,15,2,1);g.fillRect(4,15,2,1);
   });
 }
+/* personSprite: builds one 8x16 passenger from shirt/pants/skin colors.
+   PEOPLE holds 5 variants; stations pick from it (pseudo-)randomly. */
 const PEOPLE=[personSprite('#e04040','#2222aa','#ffcc99'),personSprite('#30a030','#333','#8a5a2b'),
   personSprite('#3a7bff','#444','#ffcc99'),personSprite('#ff7bd5','#222','#5a3a1b'),
   personSprite('#ff8c00','#005','#ffe0b0')];
@@ -197,6 +313,10 @@ function boardSprite(name){
 }
 
 /* ---------- audio: tiny square-wave 16-bit bleeps ---------- */
+// WebAudio 101: AudioContext = speaker system. Oscillator = tone generator,
+// Gain = volume knob. beep() makes a short tone that fades out.
+// Browsers block sound until the user presses something, so audio() is
+// called on first key/touch (and resumes if suspended). Mute = skip all.
 let AC=null, muted=false, engineOsc=null, engineGain=null;
 function audio(){ if(!AC){AC=new (window.AudioContext||window.webkitAudioContext)();} if(AC.state==='suspended')AC.resume(); return AC; }
 function beep(f,dur,type='square',vol=0.12,slide=0){
@@ -219,6 +339,10 @@ function startEngine(){
 }
 
 /* ---------- track / timetable (ENDLESS) ---------- */
+// The world is 1-dimensional: everything lives at a "pos" in meters along
+// the track. trackPos = where the train front is. Stations/signs/lamps are
+// just numbers; rendering converts (objectPos - trackPos) into screen size.
+// New stations are generated forever ahead, old ones pruned behind.
 const NAMES=['NEO TOKYO','PIXEL BAY','CRT CROSS','MODE 7','16 BIT END','VGA VILLE','SPRITE ST','RASTER RD','COPPER CT','BLITTER B'];
 const STATIONS=[]; // {name,pos,signal:'red'|'green',arrived}
 const ST_HALF=110;          // platform half-length (m)
@@ -232,6 +356,10 @@ function pushStation(pos,name){const st={name:name||pickName(),pos,signal:'red',
 const LAMP_EVERY=60, SLEEPER_EVERY=6;
 
 /* ---------- game state ---------- */
+// state machine: 'title' → 'drive' ⇄ 'doors' (done is unused legacy end screen).
+// trackPos/speed = physics. throttle/brake = 0..4 notches (chunky arcade feel).
+// nextStIdx = which station we are heading for. score/popups = feedback.
+// legClean/approachAwarded/emergencyUsed = per-leg bonus flags, reset each leg.
 let state='title'; // title | drive | doors | done
 let trackPos=0, speed=0;           // m, m/s
 let throttle=0, brake=0;           // 0..4 , 0..4
@@ -242,6 +370,8 @@ let late=0, timeLeft=0, stationBonusMsg='', msgTimer=0;
 let shake=0, lookX=0, hornT=0, overSpeedT=0;
 let flashT=0, departOk=false;
 /* score event feed + hi-score + per-leg driving flags */
+// addScore: clamps at 0, saves hi-score to localStorage (survives reload),
+// and pushes a floating "+100 GOOD STOP" popup (max 6 on screen).
 let hiScore=0; try{hiScore=parseInt(localStorage.getItem('supersubway_hi')||'0')||0;}catch(e){}
 const popups=[]; // {txt,t,color}
 let legClean=true, approachAwarded=false, emergencyUsed=false, distClean=0;
@@ -254,6 +384,8 @@ function resetLegFlags(){legClean=true;approachAwarded=false;emergencyUsed=false
 const VMAX=45, ST_VMAX=16;
 const LIM_KMH_TOP=170;
 /* endless speed-limit zones: [{at, vms}] — each zone starts with a trackside sign */
+// ensureLimits: keep ~1400m of random limit zones generated ahead of the train
+// and drop very old ones (max 48). zoneLimitAt: "last zone at-or-before p wins".
 const LIMITS=[];
 const SPEEDS=[42,34,27,20,14]; // m/s ≈ 151/122/97/72/50 km/h
 function ensureLimits(){
@@ -270,6 +402,12 @@ function zoneLimitAt(p){
   return v;
 }
 
+// trackCurve: sideways offset of the track at position p (sum of 3 sines =
+// gentle + medium + wiggly bends). Everything on screen shifts by the
+// difference between the curve ahead and the curve at the camera — that is
+// what makes bends appear to swing. curveSharp: how bendy is it HERE
+// (sampled ±14m). curveLimitAt: sharper bend → lower safe speed.
+// speedLimitAt: the strictest of zone limit, station limit, curve limit.
 function trackCurve(p){ return Math.sin(p*0.0046)*40 + Math.sin(p*0.0014)*48 + Math.sin(p*0.011)*9; }
 function curveSharp(p){ return Math.abs(trackCurve(p+14)-trackCurve(p-14))/28; }
 function curveLimitAt(p){ const sh=curveSharp(p); return Math.max(14, Math.min(45, 45-sh*90)); }
@@ -280,8 +418,17 @@ function speedLimitAt(p){
   return Math.min(lim,curveLimitAt(p));
 }
 
-/* ---------- input ---------- */
+/* ---------- input (keyboard + touch) ---------- */
+// Pattern: small do*() functions hold the real logic; keyboard handler AND
+// touch buttons both call them. That way PWR works identically on ↑, W,
+// or the on-screen button. lookX = -1/0/1 shifts the camera sideways.
 const keys={};
+function doPower(){ if(emergency){emergency=false;} brake=Math.max(0,brake-1); throttle=Math.min(4,throttle+1); beep(300+throttle*90,0.07); }
+function doBrake(){ throttle=0; brake=Math.min(4,brake+1); beep(220-brake*20,0.08); }
+function toggleEmergency(){ emergency=!emergency; beep(emergency?180:520,0.15); if(emergency){throttle=0;brake=4;emergencyUsed=true;legClean=false;} else brake=0; }
+function doHorn(){ horn();hornT=1;beep(440,0.1,'square',0.06); }
+function toggleMute(){ muted=!muted; if(engineGain)engineGain.gain.value=muted?0:0.03; const b=document.getElementById('btnMute'); if(b)b.textContent=muted?'🔇':'🔊'; }
+function pressStart(){ if(state==='title'||state==='done'){startGame();return true;} return false; }
 addEventListener('keydown',e=>{
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();
   if(e.repeat)return; keys[e.key.toLowerCase()]=true;
@@ -289,18 +436,57 @@ addEventListener('keydown',e=>{
   const k=e.key.toLowerCase();
   if(state==='title'&&(k==='enter'||k===' ')){startGame();return;}
   if(state==='done'&&k==='enter'){startGame();return;}
-  if(k==='m'){muted=!muted; if(engineGain)engineGain.gain.value=muted?0:0.03; return;}
-  if(k==='h'){horn();hornT=1;beep(440,0.1,'square',0.06);return;}
-  if(k===' '){emergency=!emergency; beep(emergency?180:520,0.15); if(emergency){throttle=0;brake=4;emergencyUsed=true;legClean=false;} else brake=0; return;}
+  if(k==='m'){toggleMute(); return;}
+  if(k==='h'){doHorn();return;}
+  if(k===' '){toggleEmergency(); return;}
   if(k==='d'||k==='e'||k==='o'){tryDoors();return;}
-  if(k==='arrowup'||k==='w'){ if(emergency){emergency=false;} brake=Math.max(0,brake-1); throttle=Math.min(4,throttle+1); beep(300+throttle*90,0.07); }
-  if(k==='arrowdown'||k==='s'){ throttle=0; brake=Math.min(4,brake+1); beep(220-brake*20,0.08); }
+  if(k==='arrowup'||k==='w'){ doPower(); }
+  if(k==='arrowdown'||k==='s'){ doBrake(); }
   if(k==='arrowleft'||k==='a')lookX=-1; if(k==='arrowright')lookX=1;
 });
 addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;
   const k=e.key.toLowerCase();
   if(k==='arrowleft'||k==='a')lookX=0; if(k==='arrowright')lookX=0;
 });
+/* touch: detect + bind buttons (tap, hold-to-repeat for PWR/BRK) */
+// bindTap: fire once per press. bindHold: fire once, then auto-repeat while
+// held (like holding a key). pointer* events cover mouse+touch+pen at once.
+if(('ontouchstart' in window)||navigator.maxTouchPoints>0){document.body.classList.add('touch');}
+function bindTap(id,fn){
+  const el=document.getElementById(id); if(!el)return;
+  el.addEventListener('pointerdown',e=>{e.preventDefault(); audio();startEngine(); fn();});
+}
+function bindHold(id,fn){
+  const el=document.getElementById(id); if(!el)return;
+  let t1=null,t2=null;
+  const start=e=>{e.preventDefault(); audio();startEngine(); el.classList.add('held'); fn();
+    t1=setTimeout(()=>{t2=setInterval(fn,170);},380);};
+  const end=()=>{el.classList.remove('held'); clearTimeout(t1); clearInterval(t2); t1=t2=null;};
+  el.addEventListener('pointerdown',start);
+  el.addEventListener('pointerup',end);
+  el.addEventListener('pointercancel',end);
+  el.addEventListener('pointerleave',end);
+  el.addEventListener('contextmenu',e=>e.preventDefault());
+}
+bindHold('btnPwr',doPower);
+bindHold('btnBrk',doBrake);
+bindTap('btnDoors',()=>{ if(!pressStart())tryDoors(); });
+bindTap('btnGo',()=>{ if(!pressStart())tryDoors(); });
+bindTap('btnHorn',doHorn);
+bindTap('btnEmg',toggleEmergency);
+bindTap('btnMute',toggleMute);
+(function(){
+  const l=document.getElementById('btnLookL'), r=document.getElementById('btnLookR');
+  if(l){l.addEventListener('pointerdown',e=>{e.preventDefault();lookX=-1;});l.addEventListener('pointerup',()=>{lookX=0;});l.addEventListener('pointercancel',()=>{lookX=0;});l.addEventListener('pointerleave',()=>{if(lookX<0)lookX=0;});}
+  if(r){r.addEventListener('pointerdown',e=>{e.preventDefault();lookX=1;});r.addEventListener('pointerup',()=>{lookX=0;});r.addEventListener('pointercancel',()=>{lookX=0;});r.addEventListener('pointerleave',()=>{if(lookX>0)lookX=0;});}
+  // tap screen to start / dismiss title & done screens (also unlocks audio on iOS)
+  const scr=document.getElementById('screen');
+  if(scr){scr.addEventListener('pointerdown',()=>{audio();startEngine();pressStart();});}
+  // keep layout honest on rotate / URL-bar show-hide
+  addEventListener('orientationchange',()=>setTimeout(()=>window.scrollTo(0,0),100));
+})();
+// startGame: reset EVERYTHING for a fresh run (pos, speed, score, stations,
+// limits) and switch state to 'drive'. Called from title/done screens.
 function startGame(){
   trackPos=0;speed=0;throttle=0;brake=0;emergency=false;
   doorsOpen=false;doorTimer=0;boarded=false;nextStIdx=0;score=0;stopsDone=0;
@@ -311,6 +497,9 @@ function startGame(){
   state='drive';chime();
 }
 // called once boarding is finished: turns THIS station green + lays random track ahead
+// Flow: doors close (auto timer OR player presses D) → signal turns green →
+// next station generated at random distance → player can depart. auto=true
+// means the timer closed them; auto=false means the player closed them early.
 function completeBoarding(auto){
   const st=STATIONS[nextStIdx];
   doorsOpen=false;state='drive';departOk=true;
@@ -329,6 +518,9 @@ function completeBoarding(auto){
   }
   msgTimer=2.5;
 }
+// tryDoors: the D key / DOORS button. Only works when slow (<0.6 m/s) and
+// within 25m of the stop point. First press OPENS (state→'doors', signal→red,
+// points for accuracy). Second press (or timer) CLOSES via completeBoarding.
 function tryDoors(){
   if(state!=='drive'&&state!=='doors')return;
   const st=STATIONS[nextStIdx];
@@ -355,6 +547,13 @@ function tryDoors(){
 }
 
 /* ---------- projection (height-aware: 0=floor, CEIL_H=roof) ---------- */
+// projectY: the ONLY 3D math in the game. Given an object (worldZoff meters
+// ahead, worldX meters sideways, worldY meters up), return screen {x, y, s}.
+// s = scale = FOCAL/z: double the distance → half the size (perspective).
+// dx subtracts the track bend so curves swing the world sideways.
+// shake adds tiny random jitter for speed vibration. Returns null if behind.
+// project() = floor-level shortcut (y=0). projectCeil() = roof shortcut.
+// drawScaledBmp*: project, then drawImage centered, skipping tiny/far/huge.
 function projectY(worldZoff, worldX, worldY, camCurve){
   const z=worldZoff; if(z<2)return null;
   const s=FOCAL/z;
@@ -385,6 +584,13 @@ function drawScaledBmpY(img,wx,wy,wzoff,w,h){
 }
 
 /* ---------- RENDER ---------- */
+// render(dt): draws ONE frame, back-to-front (painter's algorithm):
+//   1. sky + vanishing point, 2. ROOF pass (rows above horizon = ceiling),
+//   3. FLOOR/WALL pass (rows below horizon = track depth), 4. bore outlines,
+//   5. sprites far→near (lamps, signs, stations, signals), 6. cockpit + HUD
+//   7. overlays (title/doors/done/messages/popups/flash/scanlines).
+// dt = seconds since last frame (unused for drawing speed here, but passed
+// to countdown timers). frame++ drives all blinking/bobbing animation.
 let frame=0;
 function render(dt){
   frame++;
@@ -409,6 +615,9 @@ function render(dt){
   ctx.fillStyle='#55557a';ctx.fillRect(vanishingX-2,HORIZON-1,4,1);
 
   /* ---- ROOF pass: rows above horizon = tunnel ceiling ---- */
+  // Same trick as floor but mirrored: row y above horizon ↔ depth z on the
+  // ceiling. Higher rows = farther. Panels alternate color every 8m so you
+  // feel motion; ribs every 20m; lamp glow strips pulse overhead.
   for(let y=ROOF_TOP;y<HORIZON;y++){
     const dy=(HORIZON-y)+0.6;
     const z=((CEIL_H-CAM_H)*FOCAL)/dy;   // world depth of this ceiling row
@@ -439,6 +648,11 @@ function render(dt){
   }
 
   /* ---- FLOOR/WALL pass: each screen row below horizon = one depth ---- */
+  // Core pseudo-3D: screen row y ↔ world depth z = CAM_H*FOCAL/(y-HORIZON).
+  // Low rows (bottom) = close = wide track; rows near horizon = far = narrow.
+  // cx shifts each row by the track bend → curves. Then per row we paint:
+  // walls, tunnel mouth darkening, platforms, track bed, sleepers, rails,
+  // stop lines, limit lines, lamp pools. One fillRect per row = fast.
   for(let y=HORIZON;y<H-COCKPIT_H;y++){
     const dy=(y-HORIZON)+0.6;
     const z=(CAM_H*FOCAL)/dy;             // world depth of this row
@@ -518,6 +732,8 @@ function render(dt){
   }
 
   /* ---- tunnel bore outlines: wall/ceiling edges converging ---- */
+  // Draws 4 converging lines (left/right wall base + left/right roof edge)
+  // by projecting points at increasing z and connecting them. Cheap "3D wire".
   (function(){
     function strokeSide(worldY,side){
       ctx.beginPath();let started=false;
@@ -538,6 +754,10 @@ function render(dt){
   })();
 
   /* sprites back-to-front (scaling bitmaps!) */
+  // IMPORTANT ORDER: draw far objects FIRST so near ones overlap them.
+  // Lamps loop runs far→near (wz decreasing). Stations skip if off-screen
+  // (off<-160 or >560) for speed. People bob with sin(frame…); signals show
+  // red until boarded, green after (st.signal), with a pulsing glow.
   const camCurve=camC;
   // ROOF lamps: fixtures bolted to the tunnel ceiling, receding to horizon
   const firstLamp=Math.ceil((trackPos+10)/LAMP_EVERY)*LAMP_EVERY;
@@ -651,9 +871,15 @@ function render(dt){
   drawHornWaves(vanishingX);
 
   /* ---------- cockpit dashboard (bottom bitmap HUD) ---------- */
+  // drawCockpit: the bottom panel — speed number + bar, LIM plaque, PWR/BRK
+  // notch blocks (4 each), door lamp, countdown clock, score, next-station
+  // name + distance bar. All plain fillRect/fillText, no images.
   drawCockpit(dt, stNow);
 
   /* ---------- text HUD ---------- */
+  // drawHUD: floating text over the 3D view — top score bar, signal repeater
+  // (mini GO/STOP mirror), station banner, meters-to-stop countdown,
+  // door prompt, SLOW DOWN / SHARP CURVE warnings.
   drawHUD(stNow);
 
   if(state==='title')drawTitle();
@@ -883,6 +1109,13 @@ function drawDone(){
 }
 
 /* ---------- UPDATE ---------- */
+// update(now): physics + rules, then render(). requestAnimationFrame gives us
+// `now` (ms timestamp); dt clamps to 0.05s so tab-switch lag can't teleport.
+// accel: throttle pushes (+1.4/notch), brakes pull (-2/notch), emergency
+// slams (-6), plus drag (-speed*0.055) and rolling friction (-0.25).
+// Then: move (trackPos += speed*dt), limits, overspeed fines, clean-run
+// trickle bonus, approach bonus, missed-station penalty, door timer,
+// engine hum pitch. Doors state freezes the train (speed=0).
 let last=performance.now();
 function update(now){
   let dt=Math.min(0.05,(now-last)/1000);last=now;
@@ -960,6 +1193,9 @@ function update(now){
 function finishRun(){state='done';beep(523,0.15);setTimeout(()=>beep(659,0.15),160);setTimeout(()=>beep(784,0.3),320);}
 
 /* idle attract: slow roll on title */
+// Title-screen eye candy: creep the camera forward so the tunnel scrolls
+// behind the title. Wraps at 700m. The real loop starts below: seed `last`,
+// then every frame runs update→render→next frame, forever.
 setInterval(()=>{ if(state==='title'){trackPos+=2; if(trackPos>700)trackPos=0;} },50);
 requestAnimationFrame((t)=>{last=t;requestAnimationFrame(update);});
 </script>

@@ -1,10 +1,22 @@
 "use strict";
 // ============================================================================
-// state.js — game state machine + scoring + station flow.
-// state machine: 'title' → 'drive' ⇄ 'doors' (done is unused legacy end screen).
-// trackPos/speed = physics. throttle/brake = 0..4 notches (chunky arcade feel).
-// nextStIdx = which station we are heading for. score/popups = feedback.
-// legClean/approachAwarded/emergencyUsed = per-leg bonus flags, reset each leg.
+// state.js — the game's MEMORY + rules for stations/score. Read this second
+// (after config.js) — almost every file reads S from here.
+// ----------------------------------------------------------------------------
+// STATE MACHINE (the game's modes — S.state is always exactly one of these):
+//   'title' → press START → 'drive' ⇄ 'doors' (open/close with D).
+//   'done' exists but is unused (endless mode never ends; kept for titles).
+// WHY ONE `S` OBJECT? ES modules share exports "live": if we did
+// `export let speed` in 5 files, each import could drift out of sync. One
+// object (S.speed, S.score...) means every file sees the SAME numbers.
+// FIELD GUIDE: trackPos/speed = physics (meters, m/s). throttle/brake =
+// 0..4 arcade "notches" (chunky steps, not smooth %). emergency = full stop.
+// doorsOpen/doorTimer/boarded = boarding sequence. nextStIdx = which station
+// in STATIONS we're heading for. score/stopsDone/popups = feedback.
+// timeLeft = timetable countdown. shake/lookX/hornT/overSpeedT/flashT =
+// visuals+timers render/update use. legClean/approachAwarded/emergencyUsed/
+// distClean = per-leg bonus flags, reset by resetLegFlags() each station.
+// hiScore persists in localStorage (survives page reloads).
 // ============================================================================
 
 import {
@@ -14,7 +26,9 @@ import {
 } from './world.js';
 import { beep, chime } from './audio.js';
 
-// Mutable game state lives on one object so ES-module imports stay in sync.
+// Mutable game state lives on ONE object so ES-module imports stay in sync
+// (see header). popups = floating "+100 GOOD STOP" texts, each {txt, t
+// (seconds left), color}. Max 6 on screen — oldest is dropped (shift()).
 export const S = {
   state: 'title', // title | drive | doors | done
   trackPos: 0, speed: 0,           // m, m/s
@@ -30,11 +44,16 @@ export const S = {
   legClean: true, approachAwarded: false, emergencyUsed: false, distClean: 0,
 };
 
+// Hi-score: load saved best on boot. localStorage = tiny browser save slot.
+// try/catch because private-mode browsers can BLOCK storage (would crash
+// without it). parseInt(...)||0 = "a number, or 0 if the save is missing".
 try { S.hiScore = parseInt(localStorage.getItem('supersubway_hi') || '0') || 0; } catch (e) { /* private mode */ }
 
-/* score event feed + hi-score + per-leg driving flags */
-// addScore: clamps at 0, saves hi-score to localStorage (survives reload),
-// and pushes a floating "+100 GOOD STOP" popup (max 6 on screen).
+/* --- Scoring --- */
+// addScore(n, label): the ONLY way score changes. Clamps at 0 (never
+// negative), saves a new hi-score, and (if label given) spawns a floating
+// popup: green "+100 CLEAN LEG" for gains, red "-100 MISSED STATION" for
+// fines. Example: addScore(300, 'PERFECT STOP').
 export function addScore(n, label) {
   S.score = Math.max(0, S.score + n);
   if (S.score > S.hiScore) {
@@ -47,6 +66,9 @@ export function addScore(n, label) {
   }
 }
 
+// resetLegFlags(): fresh bonus slate for the next station leg. Called by
+// startGame(), completeBoarding(), and after a missed station. "Leg" = the
+// stretch between two stations; drive it cleanly for bonus points.
 export function resetLegFlags() {
   S.legClean = true;
   S.approachAwarded = false;
@@ -55,8 +77,11 @@ export function resetLegFlags() {
   S.overSpeedT = 0;
 }
 
-// startGame: reset EVERYTHING for a fresh run (pos, speed, score, stations,
-// limits) and switch state to 'drive'. Called from title/done screens.
+// startGame(): FULL reset for a fresh run, then state → 'drive'.
+// Steps: 1) zero physics/score/timers, 2) clear popups + leg flags,
+// 3) wipe STATIONS and plant the first station 800 m ahead, 4) wipe LIMITS,
+// seed one 42 m/s zone at 0 and generate ahead, 5) wipe + generate message
+// signs, 6) switch mode + play the start chime. Called from title/done.
 export function startGame() {
   S.trackPos = 0; S.speed = 0; S.throttle = 0; S.brake = 0; S.emergency = false;
   S.doorsOpen = false; S.doorTimer = 0; S.boarded = false;
@@ -76,10 +101,12 @@ export function startGame() {
   chime();
 }
 
-// called once boarding is finished: turns THIS station green + lays random track ahead
-// Flow: doors close (auto timer OR player presses D) → signal turns green →
-// next station generated at random distance → player can depart. auto=true
-// means the timer closed them; auto=false means the player closed them early.
+// completeBoarding(auto): boarding is DONE — close up and get ready to go.
+// Flow: doors close (auto timer ran out OR player pressed D early) → THIS
+// station's signal turns GREEN → nextStIdx moves on → +45 s timetable → a NEW
+// random station is planted ahead → leg flags reset. auto=true means "the
+// 6-second timer closed them"; false means "the player closed them early"
+// (slightly different departure message). Plays a two-tone "doors closed".
 export function completeBoarding(auto) {
   const st = STATIONS[S.nextStIdx];
   S.doorsOpen = false;
@@ -103,9 +130,13 @@ export function completeBoarding(auto) {
   S.msgTimer = 2.5;
 }
 
-// tryDoors: the D key / DOORS button. Only works when slow (<0.6 m/s) and
-// within 25m of the stop point. First press OPENS (state→'doors', signal→red,
-// points for accuracy). Second press (or timer) CLOSES via completeBoarding.
+// tryDoors(): the D key / DOORS button. Rules: only in drive/doors mode,
+// only when nearly stopped (speed ≤ 0.6 m/s), only near a platform (within
+// 40 m of the stop point). FIRST press OPENS (mode→'doors', signal→RED,
+// accuracy points: ≤6 m = 300 PERFECT, ≤12 m = 200, else 100; +50 SMOOTH if
+// no emergency and gentle braking; +100 CLEAN LEG if no speeding this leg).
+// SECOND press (or the 6 s timer) CLOSES via completeBoarding(). Too fast or
+// no platform = angry buzz + hint message, no state change.
 export function tryDoors() {
   if (S.state !== 'drive' && S.state !== 'doors') return;
   const st = STATIONS[S.nextStIdx];
@@ -147,6 +178,8 @@ export function tryDoors() {
   }
 }
 
+// finishRun(): legacy "shift over" jingle → 'done' screen. Unused in endless
+// mode (nothing calls it yet) but kept so a future timetable ending works.
 export function finishRun() {
   S.state = 'done';
   beep(523, 0.15);

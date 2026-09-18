@@ -1,14 +1,27 @@
 "use strict";
 // ============================================================================
-// sprites.js — procedural pixel art (bitmaps that get SCALED).
-// No image files! Every lamp, signal, person, bench is painted pixel by
-// pixel with fillRect(), then drawn big/small with drawImage().
-// "spr" = sprite. They are tiny on purpose — scaling keeps them chunky.
+// sprites.js — ALL the pixel art. Read this if you want to change the LOOK.
+// ----------------------------------------------------------------------------
+// HOW TO READ THIS FILE (junior map):
+//   A "sprite" is just a tiny picture (a stamp from makeBmp in config.js).
+//   There are NO image files — every lamp, signal, person and bench below is
+//   painted with code: pick a color (g.fillStyle='...') then paint a rectangle
+//   (g.fillRect(x, y, width, height)). render.js then stamps each sprite BIG
+//   or SMALL with drawImage() depending on distance. Sprites are tiny ON
+//   PURPOSE — scaling a small picture up is what makes pixels look chunky.
+//   Names starting with "spr" = ready-made sprite. Names ending in "Sprite"
+//   (speedSignSprite, msgSignSprite, boardSprite) = FACTORY FUNCTIONS that
+//   build a sprite for a given text/number and CACHE it (build once, reuse).
+// Only import: makeBmp from config.js. Nothing else needed to draw.
 // ============================================================================
 
 import { makeBmp } from './config.js';
 
-// ceiling lamp fixture: housing bolted to tunnel ROOF, bulb hangs down
+// --- Ceiling lamp ---
+// Fixture bolted to the tunnel ROOF: dark housing (top rows), a mount, then
+// a warm glowing tube that hangs down. render.js stamps this overhead.
+// Reading a sprite recipe: each fillRect line paints one piece, top→bottom.
+// clearRect first = "start transparent" so only our pixels show.
 export const sprLamp = makeBmp(24, 10, (g) => {
   g.clearRect(0, 0, 24, 10);
   g.fillStyle = '#0c0c14'; g.fillRect(0, 0, 24, 4);          // housing
@@ -19,7 +32,12 @@ export const sprLamp = makeBmp(24, 10, (g) => {
   g.fillStyle = 'rgba(255,242,176,0.4)'; g.fillRect(4, 5, 16, 5);
 });
 
-// big exit-signal heads (red / green) with glow halo
+// --- Exit signals + trackside signals ---
+// Big gantry signal heads at the end of each platform. RED = doors open /
+// wait, GREEN = boarded / go. Each head is a dark box with one lit lamp and
+// one dark lamp, plus a soft transparent "halo" rectangle around it so it
+// glows at night. render.js picks sprExitR or sprExitG by st.signal.
+// (sprSignalG/R are smaller spares, kept for future use.)
 export const sprExitR = makeBmp(12, 20, (g) => {
   g.clearRect(0, 0, 12, 20);
   g.fillStyle = 'rgba(255,40,40,0.35)'; g.fillRect(0, 0, 12, 20);
@@ -53,9 +71,14 @@ export const sprSignalR = makeBmp(8, 18, (g) => {
   g.fillStyle = '#300'; g.fillRect(2, 11, 4, 4);
 });
 
-/* Speed-limit signs are cached: speedSignSprite(50) builds the bitmap once,
-   then reuses it. Without the cache we'd rebuild text every frame (slow). */
-/* max-speed sign per value (yellow board on a post) + sharp-curve warning */
+/* --- Speed-limit signs (CACHED factory — read this pattern!) ---
+   speedSignSprite(50) builds the yellow "50" board ONCE, stores it in
+   speedSignCache[50], and returns the SAME picture next time. Why? Painting
+   text (fillText) is slow — without the cache we'd rebuild it 60×/second.
+   Pattern to reuse: `if (cache[key]) return cache[key]; ...build...;
+   cache[key] = result; return result;` */
+// max-speed sign: yellow board on a grey post. Font shrinks for 3-digit
+// numbers so "151" still fits. Called by render.js for every limit zone.
 const speedSignCache = {};
 export function speedSignSprite(kmh) {
   if (speedSignCache[kmh]) return speedSignCache[kmh];
@@ -74,7 +97,9 @@ export function speedSignSprite(kmh) {
   return c;
 }
 
-/* Green motivational signs — short quotes on green boards with white text */
+/* --- Green message signs (same cache pattern as speed signs) ---
+   Green boards with white QUOTES ("MIND THE GAP"). Long messages are split
+   into two lines at the middle word so they fit the 48px board. */
 const msgSignCache = {};
 export function msgSignSprite(msg) {
   if (msgSignCache[msg]) return msgSignCache[msg];
@@ -98,6 +123,10 @@ export function msgSignSprite(msg) {
   return c;
 }
 
+// --- Curve warning diamond ---
+// Yellow diamond with a black squiggle arrow, planted before sharp bends.
+// Painted with paths (moveTo/lineTo/stroke), not just rectangles — the one
+// place we draw a non-rectangle shape. g.lineWidth = how thick the line is.
 export const sprCurveWarn = makeBmp(18, 26, (g) => {
   g.clearRect(0, 0, 18, 26);
   g.fillStyle = '#333'; g.fillRect(7, 12, 4, 14);             // post
@@ -111,8 +140,15 @@ export const sprCurveWarn = makeBmp(18, 26, (g) => {
   g.beginPath(); g.moveTo(12, 5); g.quadraticCurveTo(4, 8, 7, 13); g.stroke();
   g.fillStyle = '#000'; g.fillRect(5, 11, 5, 2);
 });
+// (Unused spare: yellow horn "sound bar". Kept so future effects can use it.)
 export const sprHorn = makeBmp(12, 8, (g) => { g.fillStyle = '#ffec00'; g.fillRect(0, 2, 12, 4); g.fillStyle = '#000'; g.fillRect(0, 3, 12, 1); });
 
+// --- Passengers ---
+// personSprite(shirt, pants, skin) builds ONE 8×16 person from 3 colors:
+// head+arms = skin, hair = black cap, torso = shirt, legs = pants, feet = black.
+// PEOPLE holds 5 ready-made variants; render.js picks them per station with
+// (i + st.pos) % PEOPLE.length — a cheap trick that looks random but gives
+// the SAME crowd every visit (deterministic = no flickering between frames).
 export function personSprite(shirt, pants, skin) {
   return makeBmp(8, 16, (g) => {
     g.clearRect(0, 0, 8, 16);
@@ -124,13 +160,17 @@ export function personSprite(shirt, pants, skin) {
     g.fillStyle = '#000'; g.fillRect(2, 15, 2, 1); g.fillRect(4, 15, 2, 1);
   });
 }
-/* personSprite: builds one 8x16 passenger from shirt/pants/skin colors.
-   PEOPLE holds 5 variants; stations pick from it (pseudo-)randomly. */
+/* PEOPLE: the 5 passenger variants. To add a new outfit, copy one line and
+   change the 3 colors: personSprite(shirtColor, pantsColor, skinColor). */
 export const PEOPLE = [
   personSprite('#e04040', '#2222aa', '#ffcc99'), personSprite('#30a030', '#333', '#8a5a2b'),
   personSprite('#3a7bff', '#444', '#ffcc99'), personSprite('#ff7bd5', '#222', '#5a3a1b'),
   personSprite('#ff8c00', '#005', '#ffe0b0')
 ];
+// --- Station furniture ---
+// sprBench: wooden slats + dark legs. sprStop: the white "STOP" board marking
+// the exact place to halt. sprStopPost: striped red/white poles planted on
+// BOTH sides of the stop point so you can spot it from far away.
 export const sprBench = makeBmp(20, 8, (g) => {
   g.fillStyle = '#5a3a1a'; g.fillRect(0, 0, 20, 3);
   g.fillStyle = '#7a522a'; g.fillRect(0, 0, 20, 1);
@@ -143,6 +183,7 @@ export const sprStop = makeBmp(24, 20, (g) => {
   g.fillStyle = '#f22'; g.fillRect(9, 14, 6, 2);
 });
 /* striped marker post flagging the optimal stop point (planted each side) */
+// Loop trick below: stripes alternate red/white every 4px down the pole.
 export const sprStopPost = makeBmp(6, 34, (g) => {
   g.clearRect(0, 0, 6, 34);
   g.fillStyle = '#222'; g.fillRect(1, 10, 4, 24);             // pole
@@ -152,7 +193,10 @@ export const sprStopPost = makeBmp(6, 34, (g) => {
   g.fillStyle = '#e02020'; g.fillRect(1, 4, 4, 2);
 });
 
-/* station name board drawn on demand (still a scaled bitmap) */
+/* --- Station name boards (cached factory, like the signs above) ---
+   Blue board, white border, station name in caps (cut to 10 letters so it
+   fits). boardSprite(name) builds each name once. hasBoard(name) just asks
+   "did we build this one already?" without building. */
 const boardCache = {};
 export function boardSprite(name) {
   if (boardCache[name]) return boardCache[name];

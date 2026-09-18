@@ -6,22 +6,38 @@
   Open index.html in a browser (or serve the folder) and it runs.
   It is published with GitHub Pages (see .github/workflows/pages.yml).
 
-  LAYOUT (multi-file, ES modules — paths are relative for project Pages):
-    index.html        → page shell: canvas (#game) + touch buttons + boot.
-    css/style.css     → page layout, arcade cabinet look, mobile buttons.
-    js/config.js      → world/camera constants, palette, canvas, makeBmp.
-    js/sprites.js     → procedural pixel art (lamps, signals, signs, people).
-    js/audio.js       → WebAudio bleeps (beep, chime, horn, engine hum).
-    js/world.js       → track math: stations, limits, curves, speed limits.
-    js/state.js       → game state, scoring, start/doors/boarding flow.
-    js/input.js       → keyboard + touch buttons call the same do*() fns.
-    js/render.js      → projection (3D→2D) + tunnel/sprites/cockpit/HUD draw.
-    js/update.js      → physics + scoring rules, called ~60x/second.
-    js/main.js        → boot: initInput() + game loop + title attract roll.
+  HOW TO READ THIS PROJECT (junior map — start here!):
+    index.html        → THIS file: page shell (canvas + buttons + boot line).
+    css/style.css     → all visual styling (layout, buttons, CRT effects).
+    js/config.js      → START WITH THIS ONE: shared numbers + paintbrush.
+    js/sprites.js     → pixel art (fun to tweak: change colors, see results).
+    js/audio.js       → sound effects (smallest logic file — good 2nd read).
+    js/world.js       → track data: stations, speed limits, curves.
+    js/state.js       → game memory: score, modes, station rules.
+    js/input.js       → controls: keyboard + touch buttons.
+    js/render.js      → drawing: fake 3D + dashboard (biggest file, read last).
+    js/update.js      → gameplay: physics + scoring, 60×/second.
+    js/main.js        → boot: 10 lines that start everything (read 3rd).
+  Suggested order for juniors: index.html → main.js → config.js → world.js →
+  state.js → input.js → update.js → audio.js → sprites.js → render.js.
 
   KEY IDEA: the "3D" is fake. Each horizontal screen row = one depth (z)
   down the tunnel. Near rows = close (big), horizon rows = far (tiny).
   Sprites are then scaled by s = FOCAL / z. That is the whole trick.
+
+  JUNIOR GLOSSARY (HTML tags you'll see below):
+    <link rel="stylesheet" href="..."> → "load the CSS file for styling".
+    <div id="...">  → invisible box used for LAYOUT (positioning things).
+    <canvas id="game" width height> → the pixel screen the JS paints into.
+       width/height = INTERNAL pixels (200×320, tiny + chunky); CSS stretches
+       it to fill the phone. Internal ≠ on-screen size — that's normal!
+    <button id="..."> → clickable button. The id is how js/input.js finds it
+       (document.getElementById('btnPwr')). Change an id here = change it in
+       input.js too, or the button silently stops working!
+    <script type="module" src="./js/main.js"> → "run the game". type=module
+       means: treat it as an ES module (can use import/export) AND run it
+       AFTER the page HTML is parsed. Paths start with ./ (relative) so the
+       game works both locally AND on GitHub project Pages (/OsloSubway/).
 ============================================================================= -->
 <html lang="en">
 <head>
@@ -34,12 +50,17 @@
 <link rel="stylesheet" href="./css/style.css">
 </head>
 <body>
-<!-- Visible page: arcade cabinet > game screen, touch pad, hint.
+<!-- Visible page: #wrap (full-screen column) > #cab (game column) >
+     #screen (the canvas) + #touch (buttons) + #hint (desktop key list).
      The canvas is only 200x320 pixels internally — CSS stretches it big. -->
 <div id="wrap">
   <div id="cab">
+    <!-- #screen: the game viewport. Tapping it also STARTS the game
+         (wired in js/input.js — and unlocks sound on iPhones). -->
     <div id="screen"><canvas id="game" width="200" height="320"></canvas></div>
-    <!-- Touch controls: two rows of big buttons. IDs are wired in js/input.js. -->
+    <!-- Touch controls: two rows of big buttons. IDs are wired in js/input.js
+         (btnPwr/btnBrk REPEAT while held; the rest fire once per tap).
+         Row 1 = driving (power, brake, doors, start). Row 2 = extras. -->
     <div id="touch" aria-label="Touch controls">
       <div class="trow">
         <button class="tbtn pwr" id="btnPwr" type="button">▲ PWR<small>power +1</small></button>
@@ -58,7 +79,9 @@
     <p id="hint"><b>↑/W</b> power &nbsp;<b>↓/S</b> brake &nbsp;<b>SPACE</b> emergency &nbsp;<b>D</b> doors &nbsp;<b>H</b> horn &nbsp;<b>←→</b> look &nbsp;<b>ENTER</b> start &nbsp;<b>M</b> mute<br><span style="color:#5a5a75">On mobile: use the buttons below — tap screen to start. Hold PWR/BRK to repeat.</span></p>
   </div>
 </div>
-<!-- ES modules: relative path keeps project Pages (/OsloSubway/) working. -->
+<!-- BOOT LINE: runs ./js/main.js as an ES module (deferred = page HTML is
+     ready first). Relative "./" path keeps project Pages (/OsloSubway/)
+     working. Everything else the game needs is imported FROM main.js. -->
 <script type="module" src="./js/main.js"></script>
 </body>
 </html>

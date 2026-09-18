@@ -1,13 +1,18 @@
 "use strict";
 // ============================================================================
-// render.js — projection (fake 3D) + all drawing.
-// render(dt): draws ONE frame, back-to-front (painter's algorithm):
-//   1. sky + vanishing point, 2. ROOF pass (rows above horizon = ceiling),
-//   3. FLOOR/WALL pass (rows below horizon = track depth), 4. bore outlines,
-//   5. sprites far→near (lamps, signs, stations, signals), 6. cockpit + HUD
-//   7. overlays (title/doors/done/messages/popups/flash/scanlines).
-// dt = seconds since last frame (drives countdown timers).
-// frame++ drives all blinking/bobbing animation.
+// render.js — ALL drawing: fake 3D tunnel + sprites + dashboard + messages.
+// ----------------------------------------------------------------------------
+// HOW A FRAME WORKS (painter's algorithm = paint far things FIRST, near
+// things LAST so near covers far — like real painting, back-to-front):
+//   1. sky + vanishing-point dot, 2. ROOF pass (ceiling rows above horizon),
+//   3. FLOOR/WALL pass (track rows below horizon), 4. bore outline wires,
+//   5. sprites FAR→NEAR (lamps, signs, stations, signals), 6. cockpit + HUD,
+//   7. overlays (title/doors/done/messages/popups/red speeding flash).
+// render(dt): draws ONE frame. dt = seconds since last frame — used to count
+// down timers (message text, popups, flash). frame++ ticks every frame and
+// drives ALL blinking/bobbing (blink = Math.sin(frame*...)) > 0 ? show : hide).
+// Drawing words you'll see: fillRect = solid rectangle, drawImage = stamp a
+// sprite, fillText = draw text, ellipse/arc = circles, globalAlpha = opacity.
 // ============================================================================
 
 import {
@@ -26,14 +31,22 @@ import {
 } from './world.js';
 import { S } from './state.js';
 
-/* ---------- projection (height-aware: 0=floor, CEIL_H=roof) ---------- */
-// projectY: the ONLY 3D math in the game. Given an object (worldZoff meters
-// ahead, worldX meters sideways, worldY meters up), return screen {x, y, s}.
-// s = scale = FOCAL/z: double the distance → half the size (perspective).
-// dx subtracts the track bend so curves swing the world sideways.
-// shake adds tiny random jitter for speed vibration. Returns null if behind.
-// project() = floor-level shortcut (y=0). projectCeil() = roof shortcut.
-// drawScaledBmp*: project, then drawImage centered, skipping tiny/far/huge.
+/* ---------- Projection: the ONLY 3D math (with a worked example) ----------
+   projectY(worldZoff, worldX, worldY, camCurve) answers: "a thing X meters
+   ahead, sideways and up — which screen pixel, and how big?"
+     z (depth) = worldZoff. Too close (< 2 m) = behind the camera → null
+     ("don't draw"). s (scale) = FOCAL/z — perspective in one division:
+     WORKED EXAMPLE with FOCAL=100: at 100 m, s=1 (draw at real size); at
+     200 m, s=0.5 (half size); at 25 m, s=4 (4× size). Double distance =
+     half size. That single line IS the "3D".
+     dx = curve(ahead) − curve(here): shifts the world sideways in bends.
+     x = screen center + (sideways − bend − look) × scale (+ tiny speed shake).
+     y = horizon + (camera height − object height) × scale: floor (height 0)
+     lands BELOW the horizon, roof (height CEIL_H) lands ABOVE it.
+   Shortcuts: project() = floor level (height 0). projectCeil() = roof level.
+   drawScaledBmp/Y(): project, then drawImage centered on the pixel, SKIPPING
+   anything off-screen, sub-pixel (< 1px), or absurdly huge (> 400px) — all
+   three skips are speed tricks so far/tiny things cost nothing. */
 export function projectY(worldZoff, worldX, worldY, camCurve) {
   const z = worldZoff;
   if (z < 2) return null;
@@ -66,7 +79,11 @@ export function drawScaledBmpY(img, wx, wy, wzoff, w, h) {
   ctx.drawImage(img, p.x - dw / 2, p.y - dh, dw, dh);
 }
 
-/* ---------- RENDER ---------- */
+/* ---------- render(): one frame, top to bottom ---------- */
+// frame counts frames forever (drives blinking). shake = speed vibration +
+// extra rumble in sharp fast bends (curveSharp > 0.13 + speed > 9).
+// camC = track bend at the camera (every row compares against it).
+// stNow = station we're inside right now (or null) — for the name banner.
 export let frame = 0;
 
 export function render(dt) {
@@ -90,10 +107,12 @@ export function render(dt) {
   ctx.fillStyle = '#2a2a4a'; ctx.fillRect(vanishingX - 1, HORIZON - 2, 2, 2);
   ctx.fillStyle = '#55557a'; ctx.fillRect(vanishingX - 2, HORIZON - 1, 4, 1);
 
-  /* ---- ROOF pass: rows above horizon = tunnel ceiling ---- */
-  // Same trick as floor but mirrored: row y above horizon ↔ depth z on the
-  // ceiling. Higher rows = farther. Panels alternate color every 8m so you
-  // feel motion; ribs every 20m; lamp glow strips pulse overhead.
+  /* ---- ROOF pass: one horizontal line = one depth on the CEILING ----
+     Mirrors the floor trick (below): each row y above the horizon ↔ a depth
+     z on the roof. Higher rows = farther. Alternating panel colors every 8 m
+     sell the motion; dark ribs every 20 m = tunnel segments; warm strips
+     where lamps hang; dark outside the bore (tunnel walls block the view);
+     a cable tray runs down the middle. Skip: z > 620 m = plain dark. */
   for (let y = ROOF_TOP; y < HORIZON; y++) {
     const dy = (HORIZON - y) + 0.6;
     const z = ((CEIL_H - CAM_H) * FOCAL) / dy;   // world depth of this ceiling row
@@ -123,12 +142,15 @@ export function render(dt) {
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(cx - 1, y, 2, 1);
   }
 
-  /* ---- FLOOR/WALL pass: each screen row below horizon = one depth ---- */
-  // Core pseudo-3D: screen row y ↔ world depth z = CAM_H*FOCAL/(y-HORIZON).
-  // Low rows (bottom) = close = wide track; rows near horizon = far = narrow.
-  // cx shifts each row by the track bend → curves. Then per row we paint:
-  // walls, tunnel mouth darkening, platforms, track bed, sleepers, rails,
-  // stop lines, limit lines, lamp pools. One fillRect per row = fast.
+  /* ---- FLOOR/WALL pass: one horizontal line = one depth on the TRACK ----
+     THE core trick: screen row y ↔ world depth z = CAM_H×FOCAL/(y−HORIZON).
+     Bottom rows = close = wide track; rows near the horizon = far = narrow.
+     cx (center-x) shifts each row by the track bend → curves visibly swing.
+     Per row we then paint: brick walls (alternating courses scroll past),
+     darkness outside the tunnel mouth, platform floors + yellow edges inside
+     stations, track bed, sleepers (ties), rails with a bright edge, the white
+     optimal-stop line, yellow limit-zone lines, warm lamp pools. One fillRect
+     per row each = fast even at 60 fps. */
   for (let y = HORIZON; y < H - COCKPIT_H; y++) {
     const dy = (y - HORIZON) + 0.6;
     const z = (CAM_H * FOCAL) / dy;             // world depth of this row
@@ -207,9 +229,11 @@ export function render(dt) {
     if (Math.floor(wz) % LAMP_EVERY < 3) { ctx.fillStyle = 'rgba(255,207,77,0.16)'; ctx.fillRect(cx - 2 * s, y, 4 * s, 1); }
   }
 
-  /* ---- tunnel bore outlines: wall/ceiling edges converging ---- */
-  // Draws 4 converging lines (left/right wall base + left/right roof edge)
-  // by projecting points at increasing z and connecting them. Cheap "3D wire".
+  /* ---- Bore outlines: 4 converging "wire" lines ----
+     Connects projected dots at increasing depths (z = 8→520 m, step 10) into
+     4 lines: left/right wall base + left/right roof edge. Cheap fake-3D cage
+     that makes bends readable. Drawn twice: dark underlay, then a faint blue
+     highlight on the floor edges. */
   (function () {
     function strokeSide(worldY, side) {
       ctx.beginPath();
@@ -230,13 +254,16 @@ export function render(dt) {
     strokeSide(0, -1); strokeSide(0, 1);
   })();
 
-  /* sprites back-to-front (scaling bitmaps!) */
-  // IMPORTANT ORDER: draw far objects FIRST so near ones overlap them.
-  // Lamps loop runs far→near (wz decreasing). Stations skip if off-screen
-  // (off<-160 or >560) for speed. People bob with sin(frame…); signals show
-  // red until boarded, green after (st.signal), with a pulsing glow.
+  /* ---- Sprites, FAR first (so near things overlap them!) ----
+     ORDER MATTERS: this whole section draws far→near. Lamps count DOWN from
+     far to near. Stations outside −160..560 m are skipped (speed trick).
+     People bob with sin(frame...) and are picked deterministically (same
+     crowd each visit, no flicker). Signals read st.signal: red until YOU
+     board, green after — plus a pulsing glow dot visible from far away. */
   const camCurve = camC;
-  // ROOF lamps: fixtures bolted to the tunnel ceiling, receding to horizon
+  // ROOF lamps: fixtures on the ceiling receding to the horizon. For each:
+  // stamp the fixture, add a soft halo ellipse, and pool light on the track
+  // below. pc.s/pf.s = that lamp's scale (skip effects when too tiny).
   const firstLamp = Math.ceil((S.trackPos + 10) / LAMP_EVERY) * LAMP_EVERY;
   for (let wz = firstLamp + LAMP_EVERY * 6; wz > S.trackPos + 8; wz -= LAMP_EVERY) {
     const off = wz - S.trackPos;
@@ -256,7 +283,10 @@ export function render(dt) {
       ctx.ellipse(pf.x, pf.y, 20 * pf.s, 4 * pf.s, 0, 0, 7); ctx.fill();
     }
   }
-  // max-speed signs at every zone start + warning diamond before sharp bends
+  // Signs: a speed board at EVERY zone start (left wall), ONE curve diamond
+  // at the next sharp bend ahead (found by scanning 30→500 m for the spot
+  // where gentle becomes sharp), green quote boards on the right wall.
+  // Off-screen signs (behind us or > 520 m out) are skipped for speed.
   {
     for (const z of LIMITS) {
       const off = z.at - S.trackPos;
@@ -280,7 +310,11 @@ export function render(dt) {
       drawScaledBmp(msgSignSprite(ms.msg), 38, off, 48, 26);
     }
   }
-  // stations: pillars, benches, people, boards, STOP marker
+  // Stations: for each visible station → name boards + pillars every 18 m
+  // (green/red alternate by position), 10 people + every-3rd-a-bench, the
+  // STOP board + striped posts at the exact stop point, and the EXIT SIGNAL
+  // gantry past the platform (beam + hanging head + glow). The bore stays
+  // OPEN past the signal on purpose — no wall drawn there.
   for (const st of STATIONS) {
     const off = st.pos - S.trackPos;
     const offStop = stopPos(st) - S.trackPos;
@@ -365,18 +399,22 @@ export function render(dt) {
   // horn visual handled by drawHornWaves()
   drawHornWaves(vanishingX);
 
-  /* ---------- cockpit dashboard (bottom bitmap HUD) ---------- */
-  // drawCockpit: the bottom panel — speed number + bar, LIM plaque, PWR/BRK
-  // notch blocks (4 each), door lamp, countdown clock, score, next-station
-  // name + distance bar. All plain fillRect/fillText, no images.
+  /* ---------- Cockpit: the bottom dashboard (plain 2D, no 3D) ----------
+     drawCockpit: bottom panel with speed number + color bar (green→yellow→
+     red), LIM plaque (current zone limit), PWR/BRK notch blocks (4 each, lit
+     = active), !EMERG! flag, door lamp + timetable + score row, next-station
+     name + distance bar (flashes "STOP ZONE" when close + slow), hi-score. */
   drawCockpit(stNow);
 
-  /* ---------- text HUD ---------- */
-  // drawHUD: floating text over the 3D view — top score bar, signal repeater
-  // (mini GO/STOP mirror), station banner, meters-to-stop countdown,
-  // door prompt, SLOW DOWN / SHARP CURVE warnings.
+  /* ---------- HUD: floating text over the 3D view ----------
+     drawHUD: top score bar, exit-signal repeater (mini mirror of the next
+     gantry: green GO / red STOP), station name banner, live meters-to-stop
+     countdown, flashing "PRESS D" door prompt, "SLOW DOWN" when over the
+     limit, "SHARP CURVE" when a bend is tighter than the zone limit. */
   drawHUD(stNow);
 
+  // Overlays by mode (only one shows at a time) + the timed center message
+  // (stationBonusMsg while msgTimer > 0 — render counts it down by dt).
   if (S.state === 'title') drawTitle();
   if (S.state === 'done') drawDone();
   if (S.state === 'doors') drawDoorsOverlay();
@@ -386,7 +424,9 @@ export function render(dt) {
     ctx.fillStyle = '#000'; ctx.fillText(S.stationBonusMsg, W / 2 + 1, HORIZON + 22);
     ctx.fillStyle = '#ffe14d'; ctx.fillText(S.stationBonusMsg, W / 2, HORIZON + 21);
   }
-  // score event popups (rise + fade, green gains / red deductions)
+  // Score popups: float UP (rise) and fade OUT (globalAlpha) over ~2.4 s,
+  // stacked newest-last. Green = points gained, red = fines. Expired ones
+  // are removed (splice) so the list never grows forever.
   for (let i = S.popups.length - 1; i >= 0; i--) {
     const pp = S.popups[i];
     pp.t -= dt;
@@ -398,7 +438,8 @@ export function render(dt) {
     ctx.fillStyle = pp.color; ctx.fillText(pp.txt, W - 7, HORIZON + 44 + i * 10 - rise);
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
   }
-  // overspeed flash
+  // Overspeed flash: full-screen red blink while flashT > 0 (update.js sets
+  // flashT = 0.2 whenever you're over the limit; render counts it down).
   if (S.flashT > 0) {
     S.flashT -= dt;
     ctx.fillStyle = `rgba(255,0,0,${0.12 + 0.1 * Math.sin(frame * 0.5)})`;
@@ -406,6 +447,9 @@ export function render(dt) {
   }
 }
 
+// drawHornWaves(vx): 3 expanding arcs above the vanishing point while the
+// horn rings (hornT > 0). r grows with frame so rings expand; alpha fades
+// with r so old rings vanish. Angles 1.2π→1.8π = upward half-circle.
 function drawHornWaves(vx) {
   if (S.hornT <= 0) return;
   ctx.strokeStyle = '#ffec00'; ctx.lineWidth = 1;
@@ -417,6 +461,12 @@ function drawHornWaves(vx) {
   ctx.globalAlpha = 1;
 }
 
+// drawCockpit(stNow): the dashboard. y0 = its top edge. Sections: panel base
+// + windshield pillars; LEFT speedometer (km/h = m/s × 3.6) + speed bar +
+// LIM plaque; RIGHT PWR/BRK notch blocks + !EMERG!; MIDDLE door lamp (green =
+// open) + T- countdown + score; BOTTOM next-station + distance bar + STOP
+// ZONE flash + hi-score. (stNow unused here — void tells linters it's
+// intentionally ignored; the station banner lives in drawHUD instead.)
 function drawCockpit(stNow) {
   void stNow;
   const y0 = H - COCKPIT_H;
@@ -497,6 +547,11 @@ function drawCockpit(stNow) {
   ctx.fillStyle = '#33334a'; ctx.fillRect(0, H - 4, W, 4);
 }
 
+// drawHUD(stNow): floating helpers over the 3D view. stNow = station we're
+// inside (or null) → wobbling blue name banner. The countdown reads the
+// distance to stopPos(next station): BOARDING… / OVER BY x m / ★ STOP! x m ★
+// (blinking green when ≤ 40 m) / STOP IN x m. Warnings compare speed against
+// speedLimitAt() and curveLimitAt() (see world.js) — text only, no physics.
 function drawHUD(stNow) {
   ctx.textAlign = 'left'; ctx.font = 'bold 8px monospace';
   // top bar
@@ -569,6 +624,8 @@ function drawHUD(stNow) {
   }
 }
 
+// drawTitle(): full-screen title card. blink = sin(frame...) flips ~every
+// 3 s so "PRESS START" flashes. The rest is static instructions + credits.
 function drawTitle() {
   ctx.fillStyle = 'rgba(0,0,10,0.84)'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
@@ -591,6 +648,9 @@ function drawTitle() {
   ctx.textAlign = 'left';
 }
 
+// drawDoorsOverlay(): boarding progress box. The green bar fills as
+// doorTimer (6 → 0, counted down in update.js) runs out: width × (1 −
+// doorTimer/6). "D = CLOSE" hints you can skip the wait by pressing D.
 function drawDoorsOverlay() {
   ctx.textAlign = 'center'; ctx.font = 'bold 8px monospace';
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W / 2 - 72, HORIZON + 48, 144, 22);
@@ -602,6 +662,8 @@ function drawDoorsOverlay() {
   ctx.textAlign = 'left';
 }
 
+// drawDone(): legacy end screen (score, stops, rank joke: >1100 LEGEND,
+// >700 PRO, else ROOKIE). Unreachable in endless mode — kept for the future.
 function drawDone() {
   ctx.fillStyle = 'rgba(0,0,10,0.85)'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';

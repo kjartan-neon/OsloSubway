@@ -1,24 +1,45 @@
 "use strict";
 // ============================================================================
-// audio.js — tiny square-wave 16-bit bleeps (WebAudio, no assets).
-// WebAudio 101: AudioContext = speaker system. Oscillator = tone generator,
-// Gain = volume knob. beep() makes a short tone that fades out.
-// Browsers block sound until the user presses something, so audio() is
-// called on first key/touch (and resumes if suspended). Mute = skip all.
+// audio.js — all sound, made with code (WebAudio). No audio files needed.
+// ----------------------------------------------------------------------------
+// JUNIOR GLOSSARY — WebAudio in 4 ideas:
+//   AudioContext ("AC") → the speaker system. You build sounds inside it.
+//   Oscillator         → a tone generator. Set its TYPE (waveform shape:
+//                        'square' = harsh retro beep, 'sawtooth' = buzzy)
+//                        and FREQUENCY (pitch in Hz; 440 = concert A).
+//   Gain               → a volume knob. We fade it to ~0 so notes don't click.
+//   Autoplay policy    → browsers stay SILENT until the user presses/clicks
+//                        something. That's why input.js calls audio() on the
+//                        first key/button press — it "unlocks" the speakers.
+// Module state below: AC (created lazily on first use), muted flag, and the
+// engine hum's oscillator+gain (one LONG note whose pitch follows speed).
 // ============================================================================
 
-let AC = null;
-let muted = false;
-let engineOsc = null, engineGain = null;
+let AC = null;   // the shared speaker system (null = not created yet)
+let muted = false; // true = skip every sound (M key / 🔊 button)
+let engineOsc = null, engineGain = null; // the endlessly-running engine hum
 
+// Mute state reader (render/input ask "are we muted?" through this).
 export function isMuted() { return muted; }
 
+// audio(): get the speaker system, creating it on first call ("lazy").
+// If the browser paused it (autoplay policy), resume it. Always call this
+// before making a sound.
 export function audio() {
   if (!AC) { AC = new (window.AudioContext || window.webkitAudioContext)(); }
   if (AC.state === 'suspended') AC.resume();
   return AC;
 }
 
+// beep(f, dur, type, vol, slide) — the ONE building block of every sound.
+//   f     → pitch in Hz (higher = squeakier). 220 = low A, 880 = high A.
+//   dur   → length in seconds (0.07 = blip, 0.5 = long horn).
+//   type  → waveform: 'square' (retro beep) or 'sawtooth' (buzzy).
+//   vol   → loudness 0..1 (keep small; 0.12 is clearly audible).
+//   slide → optional pitch glide in Hz (negative = falling siren).
+// Recipe: make oscillator + gain → connect tone→volume→speakers → play the
+// note, then schedule it to STOP after dur seconds. try/catch = "if sound
+// fails (no speakers, blocked), stay silent instead of crashing the game".
 export function beep(f, dur, type = 'square', vol = 0.12, slide = 0) {
   if (muted) return;
   try {
@@ -30,17 +51,24 @@ export function beep(f, dur, type = 'square', vol = 0.12, slide = 0) {
   } catch (e) { /* audio unavailable — stay silent */ }
 }
 
+// chime(): the happy "doors opened / game started" arpeggio — 3 rising notes.
+// setTimeout(fn, ms) = "run fn after ms milliseconds" (staggers the notes).
 export function chime() {
   beep(660, 0.12);
   setTimeout(() => beep(880, 0.18), 130);
   setTimeout(() => beep(1320, 0.25), 260);
 }
 
+// hornSound(): two buzzy notes at once (a train-chord). Named hornSound —
+// NOT horn — so it can't be confused with the sprHorn sprite picture.
 export function hornSound() {
   beep(220, 0.5, 'sawtooth', 0.18);
   beep(277, 0.5, 'sawtooth', 0.18);
 }
 
+// startEngine(): create the ONE long engine note (if not already running).
+// Unlike beep() this note never stops — updateEngine() retunes it every
+// frame. Guard: do nothing if muted or if the engine already exists.
 export function startEngine() {
   if (muted || engineOsc) return;
   try {
@@ -56,7 +84,9 @@ export function startEngine() {
   } catch (e) { /* audio unavailable — stay silent */ }
 }
 
-// Called every frame from update(): pitch follows speed + throttle.
+// updateEngine(speed, throttle): retune the engine hum every frame.
+// Faster speed + higher throttle = higher pitch + louder. Called from
+// update.js. Does nothing until startEngine() has run (engineOsc = null).
 export function updateEngine(speed, throttle) {
   if (engineOsc && !muted) {
     engineOsc.frequency.value = 35 + speed * 6 + throttle * 8;
@@ -64,6 +94,9 @@ export function updateEngine(speed, throttle) {
   }
 }
 
+// toggleMute(): flip muted on/off, silence (or restore) the engine hum, and
+// swap the 🔊/🔇 button label. Returns the new muted value. Wired to the M
+// key and the mute button in input.js.
 export function toggleMute() {
   muted = !muted;
   if (engineGain) engineGain.gain.value = muted ? 0 : 0.03;

@@ -1,40 +1,68 @@
-/* SUPER SUBWAY '94 — page + arcade cabinet styles.
-   Extracted from the original single-file index.html (no visual changes). */
+/* ============================================================================
+   SUPER SUBWAY '94 — all visual styling (no game logic lives here).
+   ----------------------------------------------------------------------------
+   JUNIOR GLOSSARY (CSS in 30 seconds):
+     selector { property: value; } → "find THESE elements, style them SO".
+     #screen = the element with id="screen". .tbtn = elements with
+       class="tbtn". * = EVERY element. :active = "while being pressed".
+       ::before/::after = invisible extra layers (used for CRT effects).
+     flexbox (display:flex; flex-direction:column) = "stack children
+       vertically and let them share space". flex:1 = "grow to fill leftover
+       room". That's how the game screen grabs all space above the buttons.
+   LAYOUT (top→bottom): #wrap (full phone screen) > #cab (game column) >
+     #screen (canvas grows, flex:1) + #touch (buttons, fixed height) + #hint.
+   SAFE-AREA: env(...) keeps buttons clear of phone notches/home bars.
+   PIXEL TRICK: canvas#game is 200×320 inside, but width/height:100% stretches
+     it — plus image-rendering:pixelated so scaled pixels stay sharp+blocky.
+   ========================================================================== */
 
+/* Reset: predictable sizing everywhere, no tap flash, game-like text. */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+/* Full-screen portrait page: no scroll, monospace arcade font, mobile-safe. */
 html,body{margin:0;padding:0;background:#0a0a12;height:100%;height:100dvh;overflow:hidden;
   font-family:'Courier New',monospace;user-select:none;-webkit-user-select:none;
   touch-action:manipulation;overscroll-behavior:none;-webkit-text-size-adjust:100%;}
-/* Portrait-only full-screen layout: game fills viewport, controls pin to bottom */
+/* #wrap: the whole phone screen, a vertical stack, clear of the top notch. */
 #wrap{position:absolute;inset:0;display:flex;flex-direction:column;align-items:stretch;
   background:#0a0a12;padding-top:env(safe-area-inset-top,0px);}
 #cab{display:flex;flex-direction:column;flex:1;min-height:0;}
-/* Game screen: grows to fill all height not taken by touch controls */
+/* #screen: the game viewport — flex:1 = "take ALL space the buttons leave".
+   touch-action:none lets the game handle touches (no browser zoom/scroll). */
 #screen{flex:1;min-height:0;width:100%;position:relative;background:#000;
   overflow:hidden;touch-action:none;cursor:pointer;}
+/* The canvas fills #screen; pixelated = chunky retro pixels when stretched. */
 canvas#game{width:100%;height:100%;display:block;image-rendering:pixelated;
   image-rendering:crisp-edges;background:#000;}
-/* CRT scanlines — subtle, every 4px, soft opacity */
+/* CRT scanlines: repeating 4px gradient overlay (3px clear + 1px dark line).
+   pointer-events:none = clicks pass THROUGH to the game. multiply = blend. */
 #screen::after{content:'';position:absolute;inset:0;pointer-events:none;
   background:repeating-linear-gradient(to bottom,
     rgba(0,0,0,0) 0px,rgba(0,0,0,0) 3px,rgba(0,0,0,.10) 4px);
   mix-blend-mode:multiply;}
-/* CRT vignette — gentle edge darkening */
+/* CRT vignette: radial darkening at the edges, ABOVE scanlines (z-index:5). */
 #screen::before{content:'';position:absolute;inset:0;pointer-events:none;z-index:5;
   background:radial-gradient(ellipse at center,rgba(0,0,0,0) 60%,rgba(0,0,0,.32) 100%);}
+/* Hidden leftovers: marquee/hint text exist in HTML but stay invisible
+   (touch buttons replace them; keep the elements for future desktop help). */
 #marquee{display:none;}
 #hint{display:none;}
-/* Touch controls: always visible, safe-area aware */
+/* #touch: button pad pinned under the screen. flex-shrink:0 = "never squish".
+   Bottom padding includes the home-bar safe area so buttons stay tappable. */
 #touch{display:flex;flex-direction:column;gap:5px;flex-shrink:0;
   padding:6px;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));
   background:#111118;border-top:2px solid #2a2a40;}
 .trow{display:flex;gap:5px;}
+/* .tbtn: chunky arcade button — full-width share (flex:1), ≥48px tall
+   (phone-friendly), 3D look via box-shadow, brighter + shifted while held
+   (:active = finger down, .held = auto-repeat hold from input.js). */
 .tbtn{flex:1;min-height:48px;min-width:0;border:2px solid #111;border-radius:6px;
   background:#3d3d5c;color:#fff;font-family:inherit;font-weight:bold;
   font-size:13px;letter-spacing:1px;touch-action:none;cursor:pointer;
   box-shadow:0 3px 0 #111,inset 0 2px 0 rgba(255,255,255,.25);}
 .tbtn small{display:block;font-size:9px;font-weight:normal;color:#c9c9de;letter-spacing:0;}
 .tbtn:active,.tbtn.held{transform:translateY(2px);box-shadow:0 1px 0 #111;filter:brightness(1.25);}
+/* Button colors by job: green power, red brakes, blue doors, bright START,
+   dark-red emergency, small grey utilities. */
 .tbtn.pwr{background:#14532d;border-color:#0a2e18;}
 .tbtn.brk{background:#6b1a1a;border-color:#3a0d0d;}
 .tbtn.doors{background:#0a3a6e;}

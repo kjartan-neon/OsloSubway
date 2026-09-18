@@ -1,4 +1,15 @@
 # Deploy the multi-file static site to GitHub Pages.
+# ----------------------------------------------------------------------------
+# JUNIOR GLOSSARY (GitHub Actions in 30 seconds):
+#   workflow    → a recipe file (THIS file) that GitHub runs automatically.
+#   on: push / workflow_dispatch → WHEN it runs: every push to "main", plus a
+#                 manual "Run workflow" button in the GitHub web UI.
+#   jobs        → the recipe's chapters. "validate" checks the site; "deploy"
+#                 publishes it. needs: validate = "don't publish a broken site".
+#   runs-on     → which computer GitHub borrows (ubuntu-latest = free Linux).
+#   steps       → the chapter's individual commands, run top-to-bottom.
+#   uses: actions/... → a pre-made helper (checkout = download our code).
+#   run: ...   → our own shell commands (the | form runs MULTIPLE lines).
 # Site layout (all paths RELATIVE so project Pages /OsloSubway/ works):
 #   index.html        → page shell, loads ./css/style.css + ./js/main.js
 #   css/style.css     → arcade cabinet look, touch buttons
@@ -21,8 +32,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Sanity-check the site before publishing: every expected file exists,
-  # every JS module parses, and index.html references the right assets.
+  # validate: prove the site is complete + wired BEFORE publishing anything.
+  # Three checks: (1) every file exists, (2) every JS module parses with
+  # `node --check` (catches typos WITHOUT running the game), (3) index.html
+  # actually references ./css/style.css + ./js/main.js as a module (catches
+  # broken <link>/<script> tags). Any failure (exit 1) stops the deploy.
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -49,6 +63,10 @@ jobs:
           grep -q 'type="module"' index.html
           echo "wiring OK"
 
+  # deploy: publish to GitHub Pages (runs ONLY if validate passed).
+  # Checkout → Setup Pages → Upload artifact (path '.' = index.html + css/ +
+  # js/ TOGETHER; extra files like LICENSE are harmless) → Deploy. The
+  # environment url prints the live site link when done.
   deploy:
     needs: validate
     environment:

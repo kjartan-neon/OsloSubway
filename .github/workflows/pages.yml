@@ -1,5 +1,9 @@
-# Deploy static site (index.html at repo root) to GitHub Pages
-# https://github.com/kjartan-neon/OsloSubway
+# Deploy the multi-file static site to GitHub Pages.
+# Site layout (all paths RELATIVE so project Pages /OsloSubway/ works):
+#   index.html        → page shell, loads ./css/style.css + ./js/main.js
+#   css/style.css     → arcade cabinet look, touch buttons
+#   js/*.js           → ES modules (config, sprites, audio, world, state,
+#                       input, render, update, main). No build step.
 name: Deploy to GitHub Pages
 
 on:
@@ -17,7 +21,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Sanity-check the site before publishing: every expected file exists,
+  # every JS module parses, and index.html references the right assets.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check site files exist
+        run: |
+          test -f index.html || (echo "missing index.html" && exit 1)
+          test -f css/style.css || (echo "missing css/style.css" && exit 1)
+          for f in config sprites audio world state input render update main; do
+            test -f "js/$f.js" || (echo "missing js/$f.js" && exit 1)
+          done
+          ls -R .
+
+      - name: Syntax-check JS modules (no build step)
+        run: |
+          for f in js/*.js; do echo "checking $f"; node --check "$f" || exit 1; done
+
+      - name: Check asset wiring (relative paths for project Pages)
+        run: |
+          grep -q 'href="./css/style.css"' index.html
+          grep -q 'src="./js/main.js"' index.html
+          grep -q 'type="module"' index.html
+          echo "wiring OK"
+
   deploy:
+    needs: validate
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -30,6 +63,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
+          # Whole repo root: index.html + css/ + js/ deploy together.
+          # .github/ and LICENSE are harmless extra files in the artifact.
           path: '.'
       - name: Deploy to GitHub Pages
         id: deployment

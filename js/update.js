@@ -25,7 +25,7 @@ import { VMAX, SPEED_SCALE } from './config.js';
 import {
   STATIONS, stopPos, pushStation, randLeg,
   ensureLimits, ensureMsgSigns,
-  speedLimitAt, curveSharp, curveLimitAt
+  speedLimitAt
 } from './world.js';
 import { S, addScore, resetLegFlags, completeBoarding } from './state.js';
 import { beep, updateEngine } from './audio.js';
@@ -64,7 +64,7 @@ export function update(now) {
         S.nextStIdx--;
       }
       // --- Overspeed: alarm + escalating fines while over the limit ---
-      // lim = strictest limit HERE (zone/station/curve). +0.5 grace avoids
+      // lim = strictest limit HERE (zone/station). +0.5 grace avoids
       // flicker. While over: red flash + leg marked dirty + beep ~3×/second
       // (the Math.floor(now/300) trick fires only when a 300 ms bucket flips).
       // Every 0.6 s over: fine = ceil(how much over × 1.5) + 1, then reset the
@@ -94,13 +94,6 @@ export function update(now) {
             beep(990, 0.06, 'square', 0.05);
           }
         }
-      }
-      // Rail screech: cosmetic screech (random buzz) when fast through a
-      // SHARP bend (sharpness > 0.16 + faster than the curve allows).
-      // Math.random() < dt*6 ≈ 6 screeches/second at 60 fps — probabilistic,
-      // so it sounds ragged like real rails.
-      if (curveSharp(S.trackPos) > 0.16 && S.speed > curveLimitAt(S.trackPos)) {
-        if (Math.random() < dt * 6) beep(1400 + Math.random() * 800, 0.08, 'sawtooth', 0.04);
       }
       // Approach bonus: ONE +25 "NICE APPROACH" per leg, awarded the first
       // frame you're 25–170 m out AND at/below the limit. approachAwarded

@@ -59,9 +59,8 @@ export function pushStation(pos, name) {
    stands exactly at `at`. LIMITS always holds ~1400 m of zones ahead.
    ensureLimits(trackPos): generate zones ahead until covered; delete very old
    ones past 80 entries (they're far behind and will never matter again).
-   Inside: zones are 160–360 m apart, random limit from SPEEDS. Bonus detail:
-   if a zone would start mid-curve, it SNAPS to the curve start with 50 km/h
-   (14 m/s) — fair warning before a bend. curveSharp (below) measures bends. */
+   Inside: zones are 160–360 m apart, random limit from SPEEDS.
+   (Curves are VISUAL ONLY — they never change limits.) */
 // zoneLimitAt(p): "which zone covers meter p?" Answer = the LAST zone whose
 // `at` is at-or-before p (loop keeps overwriting v while zones are behind us,
 // stops at the first zone ahead). Default 42 m/s if the list is empty.
@@ -69,19 +68,8 @@ export const LIMITS = [];
 export function ensureLimits(trackPos) {
   let lastAt = LIMITS.length ? LIMITS[LIMITS.length - 1].at : -100;
   while (lastAt < trackPos + 1400) {
-    let at = lastAt + 160 + Math.floor(Math.random() * 200);
-    let vms = SPEEDS[Math.floor(Math.random() * SPEEDS.length)];
-    // snap to nearby curve start and set 50 km/h
-    let prevSh = curveSharp(at - 50) < 0.09;
-    for (let dp = -40; dp <= 80; dp += 8) {
-      const sh = curveSharp(at + dp);
-      if (prevSh && sh > 0.11) {
-        const snap = at + dp - 12;
-        if (snap > lastAt + 60) { at = snap; vms = 14; }
-        break;
-      }
-      prevSh = sh < 0.09;
-    }
+    const at = lastAt + 160 + Math.floor(Math.random() * 200);
+    const vms = SPEEDS[Math.floor(Math.random() * SPEEDS.length)];
     lastAt = at;
     LIMITS.push({ at: lastAt, vms });
   }
@@ -115,7 +103,7 @@ export function zoneLimitAt(p) {
   return v;
 }
 
-// --- Track shape: where curves come from ---
+// --- Track shape (VISUAL ONLY — no gameplay effect) ---
 // trackCurve(p): sideways offset of the rails at meter p. It's the SUM of 3
 // sine waves (gentle + medium + small wiggles) — adding sines gives
 // natural-feeling bends instead of repeating identical curves.
@@ -123,11 +111,12 @@ export function zoneLimitAt(p) {
 // straight the difference is 0 (tunnel centered); in a bend it grows, so the
 // tunnel visually SWINGS sideways. That's the whole "curves" trick.
 // curveSharp(p): "how bendy is it HERE?" = how fast the offset changes across
-// ±14 m. curveLimitAt(p): sharper bend → lower safe speed (14–45 m/s range).
+// ±14 m. Used ONLY to place curve-warning signs (visual motion cues).
+// curveLimitAt(p): kept for reference only — NOT enforced anymore.
 // inStation(p): which station (if any) owns meter p? Scans STATIONS for one
 // whose centre is within ST_HALF. Returns the station or null.
 // speedLimitAt(p): THE rule the game enforces = strictest of (zone limit,
-// station limit near platforms, curve limit). Math.min = "lowest wins".
+// station limit near platforms). Curves do NOT affect it.
 export function trackCurve(p) {
   return Math.sin(p * 0.0046) * 40 + Math.sin(p * 0.0014) * 48 + Math.sin(p * 0.011) * 9;
 }
@@ -149,5 +138,5 @@ export function speedLimitAt(p, VMAX = 45, ST_VMAX = 20) {
   let lim = Math.min(zoneLimitAt(p), VMAX);
   const s = inStation(p);
   if (s && Math.abs(p - s.pos) < 130) lim = Math.min(lim, ST_VMAX);
-  return Math.min(lim, curveLimitAt(p));
+  return lim;
 }

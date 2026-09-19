@@ -26,7 +26,7 @@ import {
 } from './sprites.js';
 import {
   STATIONS, LIMITS, MSGSIGNS,
-  stopPos, sigPos, trackCurve, curveSharp, curveLimitAt,
+  stopPos, sigPos, trackCurve, curveSharp,
   inStation, speedLimitAt, zoneLimitAt
 } from './world.js';
 import { S } from './state.js';
@@ -80,8 +80,7 @@ export function drawScaledBmpY(img, wx, wy, wzoff, w, h) {
 }
 
 /* ---------- render(): one frame, top to bottom ---------- */
-// frame counts frames forever (drives blinking). shake = speed vibration +
-// extra rumble in sharp fast bends (curveSharp > 0.13 + speed > 9).
+// frame counts frames forever (drives blinking). shake = speed vibration.
 // camC = track bend at the camera (every row compares against it).
 // stNow = station we're inside right now (or null) — for the name banner.
 export let frame = 0;
@@ -89,11 +88,6 @@ export let frame = 0;
 export function render(dt) {
   frame++;
   S.shake = Math.min(3, S.speed * 0.09 + (S.speed > 20 ? Math.sin(frame * 0.7) * 0.8 : 0));
-  // curve rumble: sharp bends shake the cab at speed
-  {
-    const csh = curveSharp(S.trackPos);
-    if (csh > 0.13 && S.speed > 9) S.shake = Math.min(4, S.shake + csh * S.speed * 0.028);
-  }
   const camC = trackCurve(S.trackPos);
   const stNow = inStation(S.trackPos);
 
@@ -284,8 +278,9 @@ export function render(dt) {
     }
   }
   // Signs: a speed board at EVERY zone start (left wall), ONE curve diamond
-  // at the next sharp bend ahead (found by scanning 30→500 m for the spot
-  // where gentle becomes sharp), green quote boards on the right wall.
+  // as a VISUAL-ONLY motion cue at the next bend ahead (found by scanning
+  // 30→500 m for the spot where gentle becomes sharp — no gameplay effect),
+  // green quote boards on the right wall.
   // Off-screen signs (behind us or > 520 m out) are skipped for speed.
   {
     for (const z of LIMITS) {
@@ -410,7 +405,7 @@ export function render(dt) {
      drawHUD: top score bar, exit-signal repeater (mini mirror of the next
      gantry: green GO / red STOP), station name banner, live meters-to-stop
      countdown, flashing "PRESS D" door prompt, "SLOW DOWN" when over the
-     limit, "SHARP CURVE" when a bend is tighter than the zone limit. */
+     limit. */
   drawHUD(stNow);
 
   // Overlays by mode (only one shows at a time) + the timed center message
@@ -550,8 +545,8 @@ function drawCockpit(stNow) {
 // drawHUD(stNow): floating helpers over the 3D view. stNow = station we're
 // inside (or null) → wobbling blue name banner. The countdown reads the
 // distance to stopPos(next station): BOARDING… / OVER BY x m / ★ STOP! x m ★
-// (blinking green when ≤ 40 m) / STOP IN x m. Warnings compare speed against
-// speedLimitAt() and curveLimitAt() (see world.js) — text only, no physics.
+// (blinking green when ≤ 40 m) / STOP IN x m. The "SLOW DOWN" warning compares
+// speed against speedLimitAt() (zones + stations only) — text only, no physics.
 function drawHUD(stNow) {
   ctx.textAlign = 'left'; ctx.font = 'bold 8px monospace';
   // top bar
@@ -615,11 +610,6 @@ function drawHUD(stNow) {
   if (speedLimitAt(S.trackPos) < VMAX && S.speed > speedLimitAt(S.trackPos)) {
     ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
     ctx.fillStyle = '#f00'; ctx.fillText('!! SLOW DOWN !!', W / 2, HORIZON + 44);
-    ctx.textAlign = 'left';
-  }
-  if (curveLimitAt(S.trackPos) < zoneLimitAt(S.trackPos) - 2.5 && S.speed > curveLimitAt(S.trackPos) - 1) {
-    ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffe14d'; ctx.fillText('!! SHARP CURVE !!', W / 2, HORIZON + 54);
     ctx.textAlign = 'left';
   }
 }

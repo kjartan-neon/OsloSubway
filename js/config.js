@@ -44,7 +44,7 @@ export const ROOF_TOP = 16;    // highest screen row the roof render covers
 export const VMAX = 45, ST_VMAX = 20;
 export const SPEED_SCALE = 2; // world scrolls 2× per m/s — numbers stay, feel doubles
 export const LIM_KMH_TOP = 170;
-export const SPEEDS = [42, 34, 27, 20, 14]; // m/s ≈ 151/122/97/72/50 km/h
+export const SPEEDS = [42, 34, 27, 20]; // m/s ≈ 151/122/97/72 km/h (slow 50 removed for action)
 export const LAMP_EVERY = 60, SLEEPER_EVERY = 6;
 
 // --- Canvas hookup (the ONE paintbrush the whole game shares) ---

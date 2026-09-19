@@ -116,7 +116,9 @@ export function zoneLimitAt(p) {
 // inStation(p): which station (if any) owns meter p? Scans STATIONS for one
 // whose centre is within ST_HALF. Returns the station or null.
 // speedLimitAt(p): THE rule the game enforces = strictest of (zone limit,
-// station limit near platforms). Curves do NOT affect it.
+// station limit near platforms). Station slow zone extends 72 m each way
+// from the platform centre (tight zone = more full-speed action).
+// Curves do NOT affect it.
 export function trackCurve(p) {
   return Math.sin(p * 0.0046) * 40 + Math.sin(p * 0.0014) * 48 + Math.sin(p * 0.011) * 9;
 }
@@ -125,7 +127,7 @@ export function curveSharp(p) {
 }
 export function curveLimitAt(p) {
   const sh = curveSharp(p);
-  return Math.max(14, Math.min(45, 45 - sh * 90));
+  return Math.max(20, Math.min(45, 45 - sh * 90));
 }
 export function inStation(p) {
   for (const s of STATIONS) { if (Math.abs(p - s.pos) < ST_HALF) return s; }
@@ -137,6 +139,6 @@ export function inStation(p) {
 export function speedLimitAt(p, VMAX = 45, ST_VMAX = 20) {
   let lim = Math.min(zoneLimitAt(p), VMAX);
   const s = inStation(p);
-  if (s && Math.abs(p - s.pos) < 130) lim = Math.min(lim, ST_VMAX);
+  if (s && Math.abs(p - s.pos) < 72) lim = Math.min(lim, ST_VMAX);
   return lim;
 }
